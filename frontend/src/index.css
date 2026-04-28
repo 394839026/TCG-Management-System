@@ -1,0 +1,170 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* TCG Theme - Card Game Inspired Colors */
+    --background: 260 30% 98%;
+    --foreground: 260 40% 15%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 260 40% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 260 40% 15%;
+
+    /* Primary: Deep Purple - mystical card game feel */
+    --primary: 265 75% 55%;
+    --primary-foreground: 0 0% 100%;
+    --primary-glow: 265 85% 70%;
+
+    --secondary: 260 20% 92%;
+    --secondary-foreground: 260 40% 25%;
+
+    --muted: 260 15% 94%;
+    --muted-foreground: 260 15% 50%;
+
+    --accent: 280 60% 65%;
+    --accent-foreground: 0 0% 100%;
+
+    --destructive: 0 75% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 260 20% 88%;
+    --input: 260 20% 90%;
+    --ring: 265 75% 55%;
+
+    --radius: 0.75rem;
+
+    /* Sidebar colors */
+    --sidebar-background: 260 35% 18%;
+    --sidebar-foreground: 260 20% 92%;
+    --sidebar-border: 260 25% 25%;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(265 75% 55%), hsl(280 60% 65%));
+    --gradient-hero: linear-gradient(135deg, hsl(260 35% 18%) 0%, hsl(265 50% 30%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(0 0% 100%) 0%, hsl(260 15% 98%) 100%);
+
+    /* Shadows with primary color tint */
+    --shadow-elegant: 0 10px 40px -10px hsl(265 75% 55% / 0.25);
+    --shadow-glow: 0 0 60px hsl(265 85% 70% / 0.3);
+    --shadow-card: 0 4px 20px hsl(260 30% 15% / 0.08);
+
+    /* Transitions */
+    --transition-smooth: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+
+    /* Team theme colors - Competitive gaming vibe */
+    --team-primary: 220 90% 56%;
+    --team-secondary: 280 70% 60%;
+    --team-accent: 190 85% 50%;
+    --team-bg: 220 40% 8%;
+    --team-card: 220 35% 12%;
+    --team-glow: 220 90% 70%;
+    
+    /* Shop theme colors - Business warmth */
+    --shop-primary: 35 90% 55%;
+    --shop-secondary: 15 85% 60%;
+    --shop-accent: 45 95% 65%;
+    --shop-bg: 30 25% 12%;
+    --shop-card: 30 20% 16%;
+    --shop-gold: 45 95% 65%;
+  }
+
+  .dark {
+    --background: 260 35% 12%;
+    --foreground: 260 20% 92%;
+
+    --card: 260 30% 16%;
+    --card-foreground: 260 20% 92%;
+
+    --popover: 260 30% 16%;
+    --popover-foreground: 260 20% 92%;
+
+    --primary: 265 75% 60%;
+    --primary-foreground: 260 35% 12%;
+    --primary-glow: 265 85% 75%;
+
+    --secondary: 260 25% 22%;
+    --secondary-foreground: 260 20% 92%;
+
+    --muted: 260 20% 20%;
+    --muted-foreground: 260 15% 60%;
+
+    --accent: 280 60% 60%;
+    --accent-foreground: 260 35% 12%;
+
+    --destructive: 0 70% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 260 25% 25%;
+    --input: 260 25% 22%;
+    --ring: 265 75% 60%;
+
+    --sidebar-background: 260 40% 10%;
+    --sidebar-foreground: 260 20% 88%;
+    --sidebar-border: 260 30% 18%;
+
+    /* Team dark mode */
+    --team-bg: 220 45% 6%;
+    --team-card: 220 40% 10%;
+    --team-glow: 220 90% 75%;
+    
+    /* Shop dark mode */
+    --shop-bg: 30 30% 10%;
+    --shop-card: 30 25% 14%;
+    --shop-gold: 45 95% 70%;
+
+    --gradient-hero: linear-gradient(135deg, hsl(260 40% 8%) 0%, hsl(265 45% 18%) 100%);
+    --gradient-card: linear-gradient(180deg, hsl(260 30% 16%) 0%, hsl(260 25% 14%) 100%);
+
+    --shadow-elegant: 0 10px 40px -10px hsl(265 75% 60% / 0.3);
+    --shadow-glow: 0 0 60px hsl(265 85% 75% / 0.25);
+    --shadow-card: 0 4px 20px hsl(0 0% 0% / 0.3);
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "cv02", "cv03", "cv04";
+  }
+}
+
+/* Custom scrollbar */
+@layer utilities {
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted-foreground) / 0.3);
+    border-radius: 3px;
+  }
+  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--muted-foreground) / 0.5);
+  }
+}
+
+/* Card hover effect */
+.card-hover {
+  transition: var(--transition-smooth);
+}
+.card-hover:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-elegant);
+}
+
+/* Glass morphism effect */
+.glass {
+  background: hsl(var(--card) / 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid hsl(var(--border) / 0.5);
+}

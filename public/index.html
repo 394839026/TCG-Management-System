@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TCG卡牌管理系统</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- 侧边栏 -->
+  <aside id="sidebar" class="sidebar" style="display: none;">
+    <div class="sidebar-header">
+      <h2>🎴 TCG管理系统</h2>
+      <p id="sidebarUser">用户</p>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#" id="nav-dashboard" onclick="showDashboard(); return false;">
+        <span>📊</span> 仪表板
+      </a>
+      <a href="#" id="nav-profile" onclick="showProfilePage(); return false;">
+        <span>👤</span> 个人主页
+      </a>
+      <a href="#" id="nav-inventory" onclick="showInventoryPage(); return false;">
+        <span>🎴</span> 我的库存
+      </a>
+      <a href="#" id="nav-settings" onclick="showSettingsPage(); return false;">
+        <span>⚙️</span> 设置
+      </a>
+    </nav>
+  </aside>
+
+  <!-- 主内容区域 -->
+  <div class="main-content">
+    <!-- 顶部导航栏 -->
+    <header id="topHeader" class="top-header" style="display: none;">
+      <h1 id="pageTitle">TCG卡牌管理系统</h1>
+      <div class="user-menu">
+        <div class="user-avatar" id="headerAvatar">U</div>
+        <span id="headerUsername">用户名</span>
+      </div>
+    </header>
+
+    <div class="content-wrapper">
+      <!-- 注册表单 -->
+      <div id="registerForm" class="auth-form" style="display: none;">
+        <h2>用户注册</h2>
+        <form onsubmit="handleRegister(event)">
+          <div class="form-group">
+            <label for="reg-username">用户名</label>
+            <input type="text" id="reg-username" name="username" required minlength="3" maxlength="20">
+          </div>
+          <div class="form-group">
+            <label for="reg-email">邮箱</label>
+            <input type="email" id="reg-email" name="email" required>
+          </div>
+          <div class="form-group">
+            <label for="reg-password">密码</label>
+            <input type="password" id="reg-password" name="password" required minlength="6">
+          </div>
+          <button type="submit" class="btn btn-primary">注册</button>
+        </form>
+        <p class="switch-form">已有账号？<a href="#" onclick="showLogin()">立即登录</a></p>
+        <div id="registerError" class="error-message"></div>
+      </div>
+
+      <!-- 登录表单 -->
+      <div id="loginForm" class="auth-form" style="display: none;">
+        <h2>用户登录</h2>
+        <form onsubmit="handleLogin(event)">
+          <div class="form-group">
+            <label for="login-email">邮箱</label>
+            <input type="email" id="login-email" name="email" required>
+          </div>
+          <div class="form-group">
+            <label for="login-password">密码</label>
+            <input type="password" id="login-password" name="password" required>
+          </div>
+          <button type="submit" class="btn btn-primary">登录</button>
+        </form>
+        <p class="switch-form">还没有账号？<a href="#" onclick="showRegister()">立即注册</a></p>
+        <div id="loginError" class="error-message"></div>
+      </div>
+
+      <!-- 普通用户仪表板 -->
+      <div id="userDashboard" class="dashboard" style="display: none;">
+        <h2>欢迎, <span id="username"></span>!</h2>
+        <div class="user-info">
+          <p><strong>邮箱:</strong> <span id="userEmail"></span></p>
+          <p><strong>角色:</strong> <span id="userRole"></span></p>
+        </div>
+        <div class="dashboard-actions">
+          <button onclick="showProfilePage()" class="btn btn-primary">个人主页</button>
+          <button onclick="showInventoryPage()" class="btn btn-secondary">我的库存</button>
+          <button onclick="showSettingsPage()" class="btn btn-secondary">设置</button>
+          <button onclick="handleLogout()" class="btn btn-danger">退出登录</button>
+        </div>
+      </div>
+
+      <!-- 个人主页 -->
+      <div id="profilePage" class="dashboard profile-page" style="display: none;">
+        <div class="profile-header">
+          <div class="profile-avatar">
+            <div class="avatar-placeholder" id="profileAvatar">👤</div>
+          </div>
+          <div class="profile-info">
+            <h2 id="profileUsername">用户名</h2>
+            <p class="profile-role" id="profileRole">角色</p>
+            <p class="profile-email" id="profileEmail">email@example.com</p>
+          </div>
+        </div>
+        
+        <div class="profile-bio" id="profileBioSection" style="display: none;">
+          <h3>个人简介</h3>
+          <p id="profileBio">暂无简介</p>
+        </div>
+
+        <div class="profile-stats">
+          <div class="stat-card">
+            <h3>总物品数</h3>
+            <p id="profileTotalItems">0</p>
+          </div>
+          <div class="stat-card">
+            <h3>总价值</h3>
+            <p id="profileTotalValue">¥0</p>
+          </div>
+          <div class="stat-card">
+            <h3>物品种类</h3>
+            <p id="profileItemTypes">0</p>
+          </div>
+        </div>
+
+        <div class="profile-inventory">
+          <h3>我的收藏</h3>
+          <div id="profileInventoryList" class="inventory-list card-view">
+            <p>加载中...</p>
+          </div>
+        </div>
+
+        <div class="profile-actions">
+          <button onclick="showDashboard()" class="btn btn-secondary">返回仪表板</button>
+          <button onclick="showSettingsPage()" class="btn btn-primary">编辑资料</button>
+        </div>
+      </div>
+
+      <!-- 设置页面 -->
+      <div id="settingsPage" class="dashboard settings-page" style="display: none;">
+        <h2>⚙️ 设置</h2>
+        
+        <div class="settings-tabs">
+          <button class="tab-btn active" onclick="showSettingsTab('profile')">个人资料</button>
+          <button class="tab-btn" onclick="showSettingsTab('appearance')">外观设置</button>
+          <button class="tab-btn" onclick="showSettingsTab('preferences')">偏好设置</button>
+        </div>
+
+        <!-- 个人资料设置 -->
+        <div id="profileSettingsTab" class="settings-tab-content active">
+          <h3>编辑个人资料</h3>
+          <form onsubmit="handleUpdateProfile(event)">
+            <div class="form-group">
+              <label for="settings-username">用户名</label>
+              <input type="text" id="settings-username" required minlength="3" maxlength="20">
+            </div>
+            <div class="form-group">
+              <label for="settings-email">邮箱</label>
+              <input type="email" id="settings-email" required>
+            </div>
+            <div class="form-group">
+              <label for="settings-bio">个人简介</label>
+              <textarea id="settings-bio" rows="4" maxlength="500" placeholder="介绍一下自己..."></textarea>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary btn-small">保存资料</button>
+            </div>
+          </form>
+          <div id="profileUpdateSuccess" class="success-message" style="display: none;"></div>
+          <div id="profileUpdateError" class="error-message"></div>
+        </div>
+
+        <!-- 外观设置 -->
+        <div id="appearanceSettingsTab" class="settings-tab-content">
+          <h3>主题风格</h3>
+          <div class="theme-selector">
+            <div class="theme-option" data-theme="default" onclick="selectTheme('default')">
+              <div class="theme-preview theme-default">
+                <div class="preview-primary"></div>
+                <div class="preview-secondary"></div>
+              </div>
+              <span>默认</span>
+            </div>
+            <div class="theme-option" data-theme="dark" onclick="selectTheme('dark')">
+              <div class="theme-preview theme-dark">
+                <div class="preview-primary"></div>
+                <div class="preview-secondary"></div>
+              </div>
+              <span>深色</span>
+            </div>
+            <div class="theme-option" data-theme="light" onclick="selectTheme('light')">
+              <div class="theme-preview theme-light">
+                <div class="preview-primary"></div>
+                <div class="preview-secondary"></div>
+              </div>
+              <span>浅色</span>
+            </div>
+            <div class="theme-option" data-theme="ocean" onclick="selectTheme('ocean')">
+              <div class="theme-preview theme-ocean">
+                <div class="preview-primary"></div>
+                <div class="preview-secondary"></div>
+              </div>
+              <span>海洋</span>
+            </div>
+            <div class="theme-option" data-theme="forest" onclick="selectTheme('forest')">
+              <div class="theme-preview theme-forest">
+                <div class="preview-primary"></div>
+                <div class="preview-secondary"></div>
+              </div>
+              <span>森林</span>
+            </div>
+            <div class="theme-option" data-theme="sunset" onclick="selectTheme('sunset')">
+              <div class="theme-preview theme-sunset">
+                <div class="preview-primary"></div>
+                <div class="preview-secondary"></div>
+              </div>
+              <span>日落</span>
+            </div>
+          </div>
+
+          <h3 style="margin-top: 30px;">自定义主色调</h3>
+          <div class="color-picker-container">
+            <input type="color" id="primaryColorPicker" value="#667eea" onchange="updatePrimaryColor(this.value)">
+            <span id="colorValue">#667eea</span>
+          </div>
+
+          <div class="form-actions" style="margin-top: 20px;">
+            <button onclick="saveAppearanceSettings()" class="btn btn-primary btn-small">保存外观设置</button>
+          </div>
+          <div id="appearanceSuccess" class="success-message" style="display: none;"></div>
+        </div>
+
+        <!-- 偏好设置 -->
+        <div id="preferencesSettingsTab" class="settings-tab-content">
+          <h3>显示偏好</h3>
+          <div class="form-group">
+            <label>库存默认视图</label>
+            <div class="radio-group">
+              <label class="radio-label">
+                <input type="radio" name="cardView" value="card" checked>
+                <span>🎴 卡片视图</span>
+              </label>
+              <label class="radio-label">
+                <input type="radio" name="cardView" value="list">
+                <span>📋 列表视图</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="form-actions">
+            <button onclick="savePreferences()" class="btn btn-primary btn-small">保存偏好</button>
+          </div>
+          <div id="preferencesSuccess" class="success-message" style="display: none;"></div>
+        </div>
+
+        <div class="settings-actions">
+          <button onclick="showDashboard()" class="btn btn-secondary">返回仪表板</button>
+        </div>
+      </div>
+
+      <!-- 管理员仪表板 -->
+      <div id="adminDashboard" class="dashboard admin-dashboard" style="display: none;">
+        <h2>管理面板 - <span id="adminName"></span></h2>
+        <div class="user-info">
+          <p><strong>角色:</strong> <span id="adminRole"></span></p>
+        </div>
+        <div class="dashboard-actions">
+          <button onclick="showInventoryPage()" class="btn btn-primary">库存管理</button>
+        </div>
+
+        <!-- 管理员功能标签页 -->
+        <div class="tabs">
+          <button class="tab-btn active" onclick="showTab('users')">用户列表</button>
+          <button class="tab-btn" id="createUserTab" onclick="showTab('createUser')" style="display: none;">创建用户</button>
+          <button class="tab-btn" id="manageRolesTab" onclick="showTab('manageRoles')" style="display: none;">角色管理</button>
+        </div>
+
+        <!-- 用户列表 -->
+        <div id="usersTab" class="tab-content active">
+          <h3>所有用户</h3>
+          <div id="userList" class="user-list">
+            <p>加载中...</p>
+          </div>
+        </div>
+
+        <!-- 创建用户（仅管理员） -->
+        <div id="createUserTabContent" class="tab-content">
+          <h3>创建新用户</h3>
+          <form onsubmit="handleAdminCreateUser(event)">
+            <div class="form-group">
+              <label for="new-username">用户名</label>
+              <input type="text" id="new-username" required minlength="3" maxlength="20">
+            </div>
+            <div class="form-group">
+              <label for="new-email">邮箱</label>
+              <input type="email" id="new-email" required>
+            </div>
+            <div class="form-group">
+              <label for="new-password">密码</label>
+              <input type="password" id="new-password" required minlength="6">
+            </div>
+            <button type="submit" class="btn btn-primary">创建用户</button>
+          </form>
+          <div id="createUserError" class="error-message"></div>
+          <div id="createUserSuccess" class="success-message"></div>
+        </div>
+
+        <!-- 角色管理（仅超级管理员） -->
+        <div id="manageRolesTabContent" class="tab-content">
+          <h3>修改用户角色</h3>
+          <div id="roleManagementList" class="user-list">
+            <p>加载中...</p>
+          </div>
+        </div>
+
+        <button onclick="handleLogout()" class="btn btn-danger">退出登录</button>
+      </div>
+
+      <!-- 库存管理页面 -->
+      <div id="inventoryPage" class="dashboard inventory-dashboard" style="display: none;">
+        <h2>我的库存</h2>
+        
+        <!-- 库存统计 -->
+        <div id="inventoryStats" class="stats-container">
+          <div class="stat-card">
+            <h3>总物品数</h3>
+            <p id="totalItems">0</p>
+          </div>
+          <div class="stat-card">
+            <h3>总价值</h3>
+            <p id="totalValue">¥0</p>
+          </div>
+          <div class="stat-card">
+            <h3>物品种类</h3>
+            <p id="itemTypes">0</p>
+          </div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="inventory-actions">
+          <div class="action-buttons">
+            <button onclick="showAddItemForm()" class="btn btn-primary btn-small" id="add-item-btn">添加物品</button>
+            <button onclick="showImportModal()" class="btn btn-success btn-small" id="import-btn">Excel导入</button>
+            <button onclick="loadInventory()" class="btn btn-secondary btn-small">刷新列表</button>
+          </div>
+          <div class="view-toggle">
+            <button onclick="switchView('card')" class="view-btn active" id="cardViewBtn">🎴 卡片视图</button>
+            <button onclick="switchView('list')" class="view-btn" id="listViewBtn">📋 列表视图</button>
+          </div>
+        </div>
+
+        <!-- 添加物品表单 -->
+        <div id="addItemForm" class="form-container" style="display: none;">
+          <h3>添加新物品</h3>
+          <form onsubmit="handleAddItem(event)">
+            <div class="form-row">
+              <div class="form-group">
+                <label for="item-name">物品名称 *</label>
+                <input type="text" id="item-name" required>
+              </div>
+              <div class="form-group">
+                <label for="item-type">类型</label>
+                <select id="item-type">
+                  <option value="card">卡牌</option>
+                  <option value="booster">补充包</option>
+                  <option value="box">盒装</option>
+                  <option value="accessory">配件</option>
+                  <option value="other">其他</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="item-quantity">数量 *</label>
+                <input type="number" id="item-quantity" min="0" required>
+              </div>
+              <div class="form-group">
+                <label for="item-condition">状态</label>
+                <select id="item-condition">
+                  <option value="mint">完美</option>
+                  <option value="near_mint" selected>近完美</option>
+                  <option value="excellent">极佳</option>
+                  <option value="good">良好</option>
+                  <option value="fair">一般</option>
+                  <option value="poor">较差</option>
+                </select>
+              </div>
+            </div>
+            <div class="form-group">
+              <label for="item-value">单价 (¥)</label>
+              <input type="number" id="item-value" min="0" step="0.01" value="0">
+            </div>
+            <div class="form-group">
+              <label for="item-description">描述</label>
+              <textarea id="item-description" rows="3" maxlength="500"></textarea>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary btn-small">保存</button>
+              <button type="button" onclick="hideAddItemForm()" class="btn btn-secondary btn-small">取消</button>
+            </div>
+          </form>
+          <div id="addItemError" class="error-message"></div>
+          <div id="addItemSuccess" class="success-message"></div>
+        </div>
+
+        <!-- 物品列表 -->
+        <div id="inventoryList" class="inventory-list">
+          <p>加载中...</p>
+        </div>
+
+        <!-- 编辑物品模态框 -->
+        <div id="editItemModal" class="modal" style="display: none;">
+          <div class="modal-content">
+            <h3>编辑物品</h3>
+            <form onsubmit="handleEditItem(event)">
+              <input type="hidden" id="edit-item-id">
+              <div class="form-group" id="edit-name-group">
+                <label for="edit-item-name">物品名称</label>
+                <input type="text" id="edit-item-name">
+              </div>
+              <div class="form-row" id="edit-value-row">
+                <div class="form-group">
+                  <label for="edit-item-quantity">数量</label>
+                  <input type="number" id="edit-item-quantity" min="0" required>
+                </div>
+                <div class="form-group">
+                  <label for="edit-item-value">单价 (¥)</label>
+                  <input type="number" id="edit-item-value" min="0" step="0.01">
+                </div>
+              </div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-small">保存</button>
+                <button type="button" onclick="closeEditModal()" class="btn btn-secondary btn-small">取消</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <!-- Excel导入模态框 -->
+        <div id="importModal" class="modal" style="display: none;">
+          <div class="modal-content">
+            <h3>Excel批量导入</h3>
+            <div class="import-instructions">
+              <p><strong>使用说明：</strong></p>
+              <ol>
+                <li>下载并填写Excel模板</li>
+                <li>支持 .xlsx 和 .xls 格式</li>
+                <li>文件大小不超过 5MB</li>
+                <li>"名称"和"数量"为必填项</li>
+              </ol>
+            </div>
+            <div class="import-actions">
+              <a href="/api/inventory/template" class="btn btn-secondary btn-small" target="_blank">下载模板</a>
+            </div>
+            <form onsubmit="handleImport(event)" enctype="multipart/form-data">
+              <div class="form-group">
+                <label for="import-file">选择Excel文件</label>
+                <input type="file" id="import-file" accept=".xlsx,.xls" required>
+              </div>
+              <div id="importProgress" class="import-progress" style="display: none;">
+                <p>正在导入...</p>
+              </div>
+              <div id="importResult" class="import-result" style="display: none;"></div>
+              <div class="form-actions">
+                <button type="submit" class="btn btn-primary btn-small">开始导入</button>
+                <button type="button" onclick="closeImportModal()" class="btn btn-secondary btn-small">取消</button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        <button onclick="showDashboard()" class="btn btn-secondary">返回仪表板</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/app.js"></script>
+  <script src="js/inventory.js"></script>
+</body>
+</html>
