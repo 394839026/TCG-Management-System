@@ -1,37 +1,34 @@
 const express = require('express');
-const cors = require('cors');
-
 const app = express();
 
-app.use(cors());
 app.use(express.json());
 
-let teams = [];
-let teamId = 1;
-
-app.get('/api/teams', (req, res) => {
-  console.log('GET /api/teams called');
-  res.json({ success: true, data: teams });
+// 简单的测试路由
+app.get('/api/test', (req, res) => {
+  console.log('✅ /api/test 被调用！');
+  res.json({ success: true, message: 'API 正常工作！' });
 });
 
-app.post('/api/teams', (req, res) => {
-  console.log('POST /api/teams called with:', req.body);
-  const { name } = req.body;
-  
-  if (!name || name.length < 2) {
-    return res.status(400).json({ message: 'Team name must be at least 2 characters' });
-  }
-
-  const newTeam = {
-    id: teamId++,
-    name,
-    createdAt: new Date()
-  };
-
-  teams.push(newTeam);
-  res.status(201).json({ success: true, data: newTeam });
+// 模拟通知路由
+app.get('/api/notifications', (req, res) => {
+  console.log('✅ /api/notifications 被调用！');
+  res.json({
+    success: true,
+    data: [
+      {
+        _id: '1',
+        title: '🎉 欢迎通知',
+        content: '这是测试通知！',
+        isRead: false
+      }
+    ]
+  });
 });
 
-app.listen(3001, () => {
-  console.log('Test server running on http://localhost:3001');
+const PORT = 8000;
+
+app.listen(PORT, () => {
+  console.log(`✅ 测试服务器运行在端口 ${PORT}`);
+  console.log(`✅ 访问 http://localhost:${PORT}/api/test 测试`);
+  console.log(`✅ 访问 http://localhost:${PORT}/api/notifications 测试通知`);
 });

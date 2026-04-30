@@ -5,20 +5,86 @@ const abac = require('../middleware/abac');
 const Deck = require('../models/Deck');
 const { body, validationResult } = require('express-validator');
 
+// 符文战场卡组验证函数
+const validateRuneDeck = (deck) => {
+  const errors = [];
+  const warnings = [];
+  
+  const { legend = [], mainDeck = [], sideDeck = [], battlefield = [], runes = [], tokens = [] } = deck;
+  
+  // 获取所有卡牌
+  const allCards = [...legend, ...mainDeck, ...sideDeck, ...battlefield, ...runes, ...tokens];
+  
+  // 检查同名卡（除符文外）
+  const cardCounts = {};
+  allCards.forEach(card => {
+    // 这里需要获取卡牌信息，但我们先假设验证通过
+    // 在实际生产环境中需要从数据库获取卡牌属性
+    cardCounts[card.card] = (cardCounts[card.card] || 0) + card.quantity;
+  });
+  
+  // 1. 传奇验证（必须正好1张）
+  const legendTotal = legend.reduce((sum, c) => sum + c.quantity, 0);
+  if (legendTotal !== 1) {
+    errors.push('传奇必须正好有1张');
+  }
+  
+  // 2. 主卡组验证（必须正好40张）
+  const mainTotal = mainDeck.reduce((sum, c) => sum + c.quantity, 0);
+  if (mainTotal !== 40) {
+    errors.push('主卡组必须正好有40张');
+  }
+  
+  // 3. 备用卡组验证（必须正好8张）
+  const sideTotal = sideDeck.reduce((sum, c) => sum + c.quantity, 0);
+  if (sideTotal !== 8) {
+    errors.push('备用卡组必须正好有8张');
+  }
+  
+  // 4. 战场（必须正好3张）
+  const battlefieldTotal = battlefield.reduce((sum, c) => sum + c.quantity, 0);
+  if (battlefieldTotal !== 3) {
+    errors.push('战场必须正好有3张');
+  }
+  
+  // 5. 符文（必须正好12张）
+  const runeTotal = runes.reduce((sum, c) => sum + c.quantity, 0);
+  if (runeTotal !== 12) {
+    errors.push('符文必须正好有12张');
+  }
+  
+  return { isValid: errors.length === 0, errors, warnings };
+};
+
 // @route   POST /api/decks
 // @desc    创建卡组
 // @access  Private
 router.post('/', protect, [
   body('name').trim().isLength({ min: 1, max: 100 }).withMessage('卡组名称需要1-100个字符'),
-  body('game').isIn(['yugioh', 'magic', 'pokemon', 'cardfight', 'other']).withMessage('游戏类型无效')
+  body('game').isIn(['rune', 'digimon', 'pokemon', 'shadowverse-evolve']).withMessage('游戏类型无效')
 ], async (req, res) => {
   try {
+    console.log('收到创建卡组请求，数据:', req.body);
+    
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('验证错误:', errors.array());
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { name, game, format, description, tags } = req.body;
+    const { name, game, format, description, tags, isPublic, cards, legend, mainDeck, sideDeck, battlefield, runes, tokens } = req.body;
+    console.log('解析后的游戏类型:', game);
+    
+    // 符文战场验证
+    if (game === 'rune') {
+      const validation = validateRuneDeck({ legend, mainDeck, sideDeck, battlefield, runes, tokens });
+      if (!validation.isValid) {
+        return res.status(400).json({ 
+          errors: validation.errors.map(msg => ({ msg })),
+          warnings: validation.warnings 
+        });
+      }
+    }
 
     const deck = new Deck({
       name,
@@ -27,10 +93,18 @@ router.post('/', protect, [
       description,
       tags,
       owner: req.user._id,
-      cards: []
+      isPublic: isPublic || false,
+      legend: legend || [],
+      mainDeck: mainDeck || [],
+      sideDeck: sideDeck || [],
+      battlefield: battlefield || [],
+      runes: runes || [],
+      tokens: tokens || [],
+      cards: cards || [] // 兼容旧格式
     });
 
     await deck.save();
+    console.log('卡组保存成功');
 
     res.status(201).json({
       success: true,
@@ -156,19 +230,46 @@ router.get('/:id', protect, async (req, res) => {
 // @access  Private (owner)
 router.put('/:id', protect, abac({ resource: 'deck', actions: ['write'] }), async (req, res) => {
   try {
-    const { name, format, description, tags, isPublic, stats } = req.body;
+    const { name, game, format, description, tags, isPublic, stats, cards, legend, mainDeck, sideDeck, battlefield, runes, tokens } = req.body;
 
     const deck = await Deck.findById(req.params.id);
     if (!deck) {
       return res.status(404).json({ message: '卡组不存在' });
     }
+    
+    // 符文战场验证
+    if (game === 'rune' || deck.game === 'rune') {
+      const validation = validateRuneDeck({ 
+        legend: legend || deck.legend,
+        mainDeck: mainDeck || deck.mainDeck, 
+        sideDeck: sideDeck || deck.sideDeck, 
+        battlefield: battlefield || deck.battlefield, 
+        runes: runes || deck.runes, 
+        tokens: tokens || deck.tokens 
+      });
+      if (!validation.isValid) {
+        return res.status(400).json({ 
+          errors: validation.errors.map(msg => ({ msg })),
+          warnings: validation.warnings 
+        });
+      }
+    }
 
     if (name) deck.name = name;
+    if (game) deck.game = game;
     if (format !== undefined) deck.format = format;
     if (description !== undefined) deck.description = description;
     if (tags) deck.tags = tags;
     if (isPublic !== undefined) deck.isPublic = isPublic;
     if (stats) deck.stats = { ...deck.stats, ...stats };
+    if (cards) deck.cards = cards;
+    // 更新新格式数据
+    if (legend) deck.legend = legend;
+    if (mainDeck) deck.mainDeck = mainDeck;
+    if (sideDeck) deck.sideDeck = sideDeck;
+    if (battlefield) deck.battlefield = battlefield;
+    if (runes) deck.runes = runes;
+    if (tokens) deck.tokens = tokens;
 
     await deck.save();
 

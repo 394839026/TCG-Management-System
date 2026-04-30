@@ -10,8 +10,14 @@ const cardTypeSchema = new mongoose.Schema({
   },
   gameType: {
     type: String,
-    enum: ['rune', 'digimon', 'pokemon'],
+    enum: ['rune', 'digimon', 'pokemon', 'shadowverse-evolve'],
     required: [true, '所属游戏是必填项']
+  },
+  cardProperty: {
+    type: String,
+    enum: ['传奇', '英雄', '专属', '单位', '装备', '法术', '战场', '指示物', '符文'],
+    // 只在 gameType 为 'rune' 时使用，且可以为空
+    default: null
   },
   description: {
     type: String,

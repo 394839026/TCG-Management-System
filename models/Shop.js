@@ -162,10 +162,9 @@ shopSchema.index({ owner: 1 });
 shopSchema.index({ 'employees.user': 1 });
 shopSchema.index({ name: 'text' });
 
-// 自动更新updatedAt
-shopSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
-  next();
+// 更新时间戳
+shopSchema.pre('save', function() {
+  this.updatedAt = new Date();
 });
 
 module.exports = mongoose.model('Shop', shopSchema);

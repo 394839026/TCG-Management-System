@@ -10,7 +10,7 @@ const deckSchema = new mongoose.Schema({
   },
   game: { 
     type: String, 
-    enum: ['yugioh', 'magic', 'pokemon', 'cardfight', 'other'],
+    enum: ['rune', 'digimon', 'pokemon', 'shadowverse-evolve'],
     required: [true, '游戏类型是必填项']
   },
   format: { 
@@ -23,10 +23,76 @@ const deckSchema = new mongoose.Schema({
     ref: 'User', 
     required: [true, '卡组所有者是必填项']
   },
+  legend: [{
+    card: { 
+      type: mongoose.Schema.Types.Mixed, 
+      required: true
+    },
+    quantity: { 
+      type: Number, 
+      required: [true, '数量是必填项'],
+      min: [1, '数量至少为1']
+    }
+  }],
+  mainDeck: [{
+    card: { 
+      type: mongoose.Schema.Types.Mixed, 
+      required: true
+    },
+    quantity: { 
+      type: Number, 
+      required: [true, '数量是必填项'],
+      min: [1, '数量至少为1']
+    }
+  }],
+  sideDeck: [{
+    card: { 
+      type: mongoose.Schema.Types.Mixed, 
+      required: true
+    },
+    quantity: { 
+      type: Number, 
+      required: [true, '数量是必填项'],
+      min: [1, '数量至少为1']
+    }
+  }],
+  battlefield: [{
+    card: { 
+      type: mongoose.Schema.Types.Mixed, 
+      required: true
+    },
+    quantity: { 
+      type: Number, 
+      required: [true, '数量是必填项'],
+      min: [1, '数量至少为1']
+    }
+  }],
+  runes: [{
+    card: { 
+      type: mongoose.Schema.Types.Mixed, 
+      required: true
+    },
+    quantity: { 
+      type: Number, 
+      required: [true, '数量是必填项'],
+      min: [1, '数量至少为1']
+    }
+  }],
+  tokens: [{
+    card: { 
+      type: mongoose.Schema.Types.Mixed, 
+      required: true
+    },
+    quantity: { 
+      type: Number, 
+      required: [true, '数量是必填项'],
+      min: [1, '数量至少为1']
+    }
+  }],
+  // 兼容旧数据
   cards: [{
     card: { 
-      type: mongoose.Schema.Types.ObjectId, 
-      ref: 'InventoryItem',
+      type: mongoose.Schema.Types.Mixed, 
       required: true
     },
     quantity: { 
@@ -93,10 +159,9 @@ deckSchema.index({ game: 1, format: 1 });
 deckSchema.index({ isPublic: 1, createdAt: -1 });
 deckSchema.index({ name: 'text' });
 
-// 自动更新updatedAt
-deckSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
-  next();
+// 更新时间戳
+deckSchema.pre('save', function() {
+  this.updatedAt = new Date();
 });
 
 module.exports = mongoose.model('Deck', deckSchema);

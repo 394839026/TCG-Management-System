@@ -27,6 +27,12 @@ router.post('/', protect, [
       return res.status(400).json({ message: '店铺名称已被使用' });
     }
 
+    // 处理 location - 如果是字符串，转换为对象格式
+    let locationData = location;
+    if (typeof location === 'string') {
+      locationData = { address: location };
+    }
+
     const shop = new Shop({
       name,
       description,
@@ -42,7 +48,7 @@ router.post('/', protect, [
           canViewReports: true
         }
       }],
-      location,
+      location: locationData,
       contactInfo,
       businessHours
     });

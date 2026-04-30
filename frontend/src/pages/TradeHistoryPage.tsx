@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Check, X, Star, Clock, ShoppingCart, MessageCircle, ThumbsUp } from 'lucide-react';
+
 import { toast } from 'sonner';
 import { formatCurrency } from '@/lib/utils';
 
@@ -132,7 +133,7 @@ export function TradeHistoryPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm text-muted-foreground">
-                      {trade.type === 'sell' ? '买家' : trade.type === 'buy' ? '卖家' : '交易伙伴'}: {trade.buyer || trade.seller || trade.partner}
+                      {trade.type === 'sell' ? '买家' : trade.type === 'buy' ? '发布者' : '交易伙伴'}: {trade.buyer || trade.seller || trade.partner}
                     </p>
                     <p className="text-sm text-muted-foreground mt-1">{trade.date}</p>
                   </div>

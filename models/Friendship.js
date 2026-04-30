@@ -30,10 +30,9 @@ const friendshipSchema = new mongoose.Schema({
 friendshipSchema.index({ requester: 1, addressee: 1 }, { unique: true });
 friendshipSchema.index({ addressee: 1, status: 1 });
 
-// 自动更新updatedAt
-friendshipSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
-  next();
+// 更新时间戳
+friendshipSchema.pre('save', function() {
+  this.updatedAt = new Date();
 });
 
 module.exports = mongoose.model('Friendship', friendshipSchema);

@@ -1,57 +1,153 @@
-import { useQuery } from '@tanstack/react-query'
-import { useNavigate } from 'react-router-dom'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
-import { CreditCard, Users, Store, BookOpen, TrendingUp, ArrowRight } from 'lucide-react'
-import { inventoryService } from '@/services/inventory'
-import { formatCurrency } from '@/lib/utils'
-import { useAuth } from '@/contexts/AuthContext'
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import { CreditCard, Users, Store, BookOpen, TrendingUp, ArrowRight, Trophy, Coins, Sparkles, CalendarCheck } from 'lucide-react';
+import { inventoryService } from '@/services/inventory';
+import { activityService, Activity } from '@/services/activity';
+import { formatCurrency } from '@/lib/utils';
+import { useAuth } from '@/contexts/AuthContext';
+import { levelSystemService } from '@/services/levelSystem';
+import { authService } from '@/services/auth';
+import { toast } from 'sonner';
 
 export function DashboardPage() {
-  const { user } = useAuth()
-  const navigate = useNavigate()
+  const { user, setUser } = useAuth();
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+
+  // 计算等级信息
+  const level = user?.level || 1;
+  const exp = user?.exp || 0;
+  const expNeeded = level >= 100 ? Infinity : 100;
+  const expProgress = level >= 100 ? 100 : Math.min(100, Math.floor((exp / expNeeded) * 100));
+  const canCheckIn = user?.canCheckIn !== undefined ? user.canCheckIn : true;
+  const totalCheckIns = user?.totalCheckIns || 0;
 
   // Fetch inventory stats
   const { data: inventoryStats, isLoading } = useQuery({
     queryKey: ['inventoryStats'],
     queryFn: () => inventoryService.getStats(),
     retry: 1,
-  })
+  });
+
+  // Fetch recent activities
+  const { data: activitiesData } = useQuery({
+    queryKey: ['recentActivities'],
+    queryFn: () => activityService.getRecent(),
+    retry: 1,
+  });
 
   const stats = [
-    { title: '库存卡牌', value: inventoryStats?.data?.totalQuantity?.toString() || '0', icon: CreditCard, change: '+12%', color: 'from-blue-500 to-cyan-500' },
     { title: '总价值', value: formatCurrency(inventoryStats?.data?.totalValue || 0), icon: Store, change: '+18%', color: 'from-green-500 to-emerald-500' },
     { title: '物品种类', value: inventoryStats?.data?.itemTypes?.toString() || '0', icon: BookOpen, change: '+3', color: 'from-orange-500 to-red-500' },
     { title: '物品总数', value: inventoryStats?.data?.totalItems?.toString() || '0', icon: CreditCard, change: '+5', color: 'from-purple-500 to-pink-500' },
-  ]
+  ];
 
-  const recentActivities = [
-    { action: '添加了新卡牌', item: '青眼白龙', time: '2分钟前', type: 'inventory' },
-    { action: '战队成员加入', item: '张三加入了你的战队', time: '1小时前', type: 'team' },
-    { action: '完成交易', item: '出售黑魔术师 x3', time: '3小时前', type: 'trade' },
-    { action: '创建新卡组', item: '标准卡组 #5', time: '昨天', type: 'deck' },
-    { action: '店铺销售', item: '补充包 x10', time: '昨天', type: 'shop' },
-  ]
+  const username = user?.username || '玩家';
+    const recentActivities: Activity[] = activitiesData?.data || [
+      { action: '欢迎' + username + '来到这里！', item: '', time: '刚刚', type: 'inventory', _id: '1', createdAt: new Date().toISOString() },
+    ];
+
+  // 签到 mutation
+  const checkInMutation = useMutation({
+    mutationFn: levelSystemService.checkIn,
+    onSuccess: (result) => {
+      console.log('✅ 签到成功:', result);
+      toast.success(result.message);
+      
+      // 更新用户信息
+      if (user) {
+        const updatedUser = {
+          ...user,
+          exp: result.data.newExp,
+          level: result.data.newLevel,
+          canCheckIn: false,
+          totalCheckIns: result.data.totalCheckIns,
+        };
+        setUser(updatedUser);
+        authService.setAuth(localStorage.getItem('token'), updatedUser);
+      }
+      
+      queryClient.invalidateQueries({ queryKey: ['inventoryStats'] });
+    },
+    onError: (error: any) => {
+      console.error('❌ 签到失败:', error);
+      toast.error(error.response?.data?.message || '签到失败');
+    },
+  });
 
   return (
     <div className="space-y-6">
-      {/* Welcome section */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">欢迎回来，{user?.username || '玩家'}！</h1>
-          <p className="text-muted-foreground mt-1">这是你的卡牌管理概览</p>
+      {/* Profile section */}
+      <Card className="overflow-hidden">
+        <div className="bg-gradient-to-r from-primary/20 via-accent/10 to-primary/20 p-6">
+          <div className="flex items-center gap-6">
+            <div className="w-20 h-20 rounded-full bg-gradient-to-br from-primary to-accent flex items-center justify-center text-3xl font-bold text-white">
+              {user?.username?.charAt(0) || '玩'}
+            </div>
+            <div className="flex-1 space-y-3">
+              <h1 className="text-2xl font-bold">{user?.username || '玩家'}</h1>
+              <p className="text-muted-foreground">
+                {user?.role === 'superadmin' ? '超级管理员' : user?.role === 'admin' ? '管理员' : '普通玩家'}
+              </p>
+              
+              {/* Level and XP section */}
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 bg-primary/10 px-3 py-1.5 rounded-full">
+                  <Trophy className="w-4 h-4 text-primary" />
+                  <span className="font-semibold text-primary">Lv.{level}</span>
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center justify-between text-sm mb-1">
+                    <span className="text-muted-foreground flex items-center gap-1">
+                      <Sparkles className="w-3.5 h-3.5" />
+                      经验值
+                    </span>
+                    <span className="font-medium">{exp} / {level >= 100 ? '已满级' : expNeeded}</span>
+                  </div>
+                  <Progress value={expProgress} className="h-3" />
+                </div>
+              </div>
+              
+              {/* Points section */}
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 bg-amber-500/10 px-3 py-1.5 rounded-full">
+                  <Coins className="w-4 h-4 text-amber-500" />
+                  <span className="font-semibold text-amber-600">{user?.points || 0} 积分</span>
+                </div>
+                <div className="flex items-center gap-2 bg-blue-500/10 px-3 py-1.5 rounded-full">
+                  <CalendarCheck className="w-4 h-4 text-blue-500" />
+                  <span className="font-semibold text-blue-600">累计签到 {totalCheckIns} 天</span>
+                </div>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <Button 
+                variant="outline" 
+                onClick={() => navigate('/settings')}
+              >
+                编辑资料
+              </Button>
+              <Button 
+                onClick={() => checkInMutation.mutate()}
+                disabled={!canCheckIn || checkInMutation.isPending}
+                className="bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-600 hover:to-green-600"
+              >
+                {checkInMutation.isPending ? '签到中...' : !canCheckIn ? '今日已签到' : '每日签到'}
+              </Button>
+            </div>
+          </div>
         </div>
-        <Button variant="premium" onClick={() => navigate('/inventory')}>
-          快速添加卡牌
-        </Button>
-      </div>
+      </Card>
 
       {/* Stats grid */}
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
           <Card key={stat.title} className="relative overflow-hidden">
-            <div className={`absolute inset-0 bg-gradient-to-br ${stat.color} opacity-5`} />
+            <div className="absolute inset-0 bg-gradient-to-br from-green-500 to-emerald-500 opacity-5" />
             <CardHeader className="relative pb-2">
               <div className="flex items-center justify-between">
                 <CardDescription>{stat.title}</CardDescription>
@@ -109,21 +205,21 @@ export function DashboardPage() {
             <Button variant="outline" className="w-full justify-between h-auto py-3" onClick={() => navigate('/inventory')}>
               <span className="flex items-center gap-2">
                 <CreditCard className="w-4 h-4" />
-                添加新卡牌
+                我的库存
               </span>
               <ArrowRight className="w-4 h-4" />
             </Button>
             <Button variant="outline" className="w-full justify-between h-auto py-3" onClick={() => navigate('/teams')}>
               <span className="flex items-center gap-2">
                 <Users className="w-4 h-4" />
-                管理战队
+                我的战队
               </span>
               <ArrowRight className="w-4 h-4" />
             </Button>
             <Button variant="outline" className="w-full justify-between h-auto py-3" onClick={() => navigate('/shops')}>
               <span className="flex items-center gap-2">
                 <Store className="w-4 h-4" />
-                查看店铺
+                店铺清单
               </span>
               <ArrowRight className="w-4 h-4" />
             </Button>
@@ -137,39 +233,6 @@ export function DashboardPage() {
           </CardContent>
         </Card>
       </div>
-
-      {/* Featured cards section */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <div>
-              <CardTitle>珍贵收藏</CardTitle>
-              <CardDescription>你最值钱的卡牌收藏</CardDescription>
-            </div>
-            <Button variant="ghost" size="sm" onClick={() => navigate('/inventory')}>查看全部</Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="grid gap-4 md:grid-cols-3 lg:grid-cols-4">
-            {[
-              { name: '青眼白龙', rarity: 'UR', value: 2500, image: 'https://images.unsplash.com/photo-1635329388647-5c5e4a5d8c5e?w=300&h=420&fit=crop' },
-              { name: '黑魔术师', rarity: 'SR', value: 1800, image: 'https://images.unsplash.com/photo-1601987177645-1e5b0e3b0e3b?w=300&h=420&fit=crop' },
-              { name: '真红眼黑龙', rarity: 'UR', value: 2200, image: 'https://images.unsplash.com/photo-1635329388647-5c5e4a5d8c5e?w=300&h=420&fit=crop' },
-              { name: '混沌帝龙', rarity: 'SSR', value: 3500, image: 'https://images.unsplash.com/photo-1601987177645-1e5b0e3b0e3b?w=300&h=420&fit=crop' },
-            ].map((card, index) => (
-              <div key={index} className="group relative aspect-[3/4] rounded-lg overflow-hidden bg-card border border-border card-hover">
-                <img src={card.image} alt={card.name} className="w-full h-full object-cover" />
-                <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent" />
-                <div className="absolute bottom-0 left-0 right-0 p-3">
-                  <Badge variant="default" className="mb-2">{card.rarity}</Badge>
-                  <p className="font-semibold text-white">{card.name}</p>
-                  <p className="text-sm text-white/80">¥{card.value}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
     </div>
-  )
+  );
 }

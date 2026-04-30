@@ -3,8 +3,8 @@ const mongoose = require('mongoose');
 const tradeMessageSchema = new mongoose.Schema({
   listing: { 
     type: mongoose.Schema.Types.ObjectId, 
-    ref: 'TradeListing', 
-    required: [true, '交易挂牌是必填项']
+    ref: 'TradeListing',
+    default: null
   },
   sender: { 
     type: mongoose.Schema.Types.ObjectId, 

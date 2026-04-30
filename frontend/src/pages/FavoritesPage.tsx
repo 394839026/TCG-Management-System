@@ -1,297 +1,177 @@
-import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Heart, Bell, BellOff, Search, TrendingUp, TrendingDown, AlertCircle } from 'lucide-react';
-import { toast } from 'sonner';
-
-interface FavoriteItem {
-  _id: string;
-  name: string;
-  itemType: string;
-  rarity: string;
-  currentPrice: number;
-  previousPrice: number;
-  priceChange: number;
-  hasAlert: boolean;
-  alertPrice?: number;
-  createdAt: string;
-}
-
-const mockFavorites: FavoriteItem[] = [
-  {
-    _id: '1',
-    name: '青眼白龙',
-    itemType: '怪兽卡',
-    rarity: 'UR',
-    currentPrice: 2500,
-    previousPrice: 2300,
-    priceChange: 8.7,
-    hasAlert: true,
-    alertPrice: 2600,
-    createdAt: '2026-04-20',
-  },
-  {
-    _id: '2',
-    name: '黑魔术师',
-    itemType: '怪兽卡',
-    rarity: 'SR',
-    currentPrice: 1800,
-    previousPrice: 1850,
-    priceChange: -2.7,
-    hasAlert: false,
-    createdAt: '2026-04-18',
-  },
-  {
-    _id: '3',
-    name: '真红眼黑龙',
-    itemType: '怪兽卡',
-    rarity: 'UR',
-    currentPrice: 2200,
-    previousPrice: 2100,
-    priceChange: 4.8,
-    hasAlert: true,
-    alertPrice: 2400,
-    createdAt: '2026-04-15',
-  },
-  {
-    _id: '4',
-    name: '混沌帝龙',
-    itemType: '怪兽卡',
-    rarity: 'SSR',
-    currentPrice: 3500,
-    previousPrice: 3600,
-    priceChange: -2.8,
-    hasAlert: false,
-    createdAt: '2026-04-10',
-  },
-];
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Heart, Send, X, Trash2, ShoppingCart } from 'lucide-react'
+import { favoriteService, messageService, TradeListing } from '@/services/api'
+import { formatCurrency } from '@/lib/utils'
+import { useAuth } from '@/contexts/AuthContext'
+import { toast } from 'sonner'
 
 export function FavoritesPage() {
-  const [searchTerm, setSearchTerm] = useState('');
-  const [activeTab, setActiveTab] = useState<'favorites' | 'alerts'>('favorites');
-  const [alertPrice, setAlertPrice] = useState<Record<string, number>>({});
+  const { user } = useAuth()
+  const queryClient = useQueryClient()
 
-  const favorites: FavoriteItem[] = mockFavorites.filter(item =>
-    item.name.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const { data: favoritesData, isLoading } = useQuery({
+    queryKey: ['favorites'],
+    queryFn: () => favoriteService.getFavorites(),
+  })
 
-  const alerts = favorites.filter(item => item.hasAlert);
-
-  const toggleAlertMutation = useMutation({
-    mutationFn: (_itemId: string) => {
-      toast.success('提醒设置已更新');
-      return Promise.resolve({ success: true });
+  const sendInterestMutation = useMutation({
+    mutationFn: async ({ listing, sellerId }: { listing: any; sellerId: string }) => {
+      const message = `我对你的挂牌【${listing.title || '未命名交易'}】有意向，想和你聊聊交易细节。`
+      await messageService.sendMessage(sellerId, message)
     },
-  });
-
-  const setAlertMutation = useMutation({
-    mutationFn: ({ itemId, price }: { itemId: string; price: number }) => {
-      setAlertPrice(prev => ({ ...prev, [itemId]: 0 }));
-      toast.success(`价格提醒已设置: ¥${price}`);
-      return Promise.resolve({ success: true });
+    onSuccess: () => {
+      toast.success('已发送意向，可以在消息中心与对方沟通')
+      queryClient.invalidateQueries({ queryKey: ['conversations'] })
     },
-  });
+    onError: () => {
+      toast.error('发送意向失败')
+    },
+  })
 
   const removeFavoriteMutation = useMutation({
-    mutationFn: (_itemId: string) => {
-      toast.success('已从收藏中移除');
-      return Promise.resolve({ success: true });
+    mutationFn: (listingId: string) => favoriteService.removeFavorite(listingId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['favorites'] })
+      toast.success('已取消收藏')
     },
-  });
+    onError: () => {
+      toast.error('取消收藏失败')
+    },
+  })
 
-  const formatCurrency = (value: number) => {
-    return `¥${value.toLocaleString()}`;
-  };
+  const favorites = favoritesData?.data || []
+
+  const isOwnListing = (listing: any) => {
+    if (!user) return false
+    const sellerId = typeof listing.seller === 'object' ? listing.seller._id : listing.seller
+    return sellerId === user._id
+  }
+
+  const handleSendInterest = (listing: any) => {
+    const sellerId = typeof listing.seller === 'object' ? listing.seller._id : listing.seller
+    if (!sellerId) {
+      toast.error('无法获取发布者信息')
+      return
+    }
+    sendInterestMutation.mutate({ listing, sellerId })
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center py-12">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">我的收藏</h1>
-          <p className="text-muted-foreground mt-1">追踪你关注的卡牌价格</p>
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold flex items-center gap-2">
+          <Heart className="w-8 h-8" />
+          我收藏的订单
+        </h1>
+        <p className="text-muted-foreground mt-1">管理你收藏的订单</p>
       </div>
 
-      <div className="flex gap-2 border-b">
-        <Button
-          variant={activeTab === 'favorites' ? 'default' : 'ghost'}
-          onClick={() => setActiveTab('favorites')}
-          className="rounded-b-none"
-        >
-          <Heart className="w-4 h-4 mr-2" />
-          收藏列表
-          <Badge variant="secondary" className="ml-2">{favorites.length}</Badge>
-        </Button>
-        <Button
-          variant={activeTab === 'alerts' ? 'default' : 'ghost'}
-          onClick={() => setActiveTab('alerts')}
-          className="rounded-b-none"
-        >
-          <Bell className="w-4 h-4 mr-2" />
-          价格提醒
-          {alerts.length > 0 && (
-            <Badge variant="destructive" className="ml-2">{alerts.length}</Badge>
-          )}
-        </Button>
-      </div>
-
-      {activeTab === 'favorites' && (
-        <div className="relative max-w-md">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="搜索收藏的卡牌..."
-            className="pl-10"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-          />
-        </div>
-      )}
-
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        {activeTab === 'favorites' && (
-          favorites.length === 0 ? (
-            <Card className="col-span-full">
-              <CardContent className="py-12 text-center">
-                <Heart className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                <p className="text-muted-foreground">暂无收藏</p>
-                <p className="text-sm text-muted-foreground mt-1">在库存页面点击收藏按钮添加卡牌</p>
-              </CardContent>
-            </Card>
-          ) : (
-            favorites.map((item) => (
-              <Card key={item._id} className="card-hover">
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <CardTitle className="text-lg">{item.name}</CardTitle>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge variant={item.rarity === 'UR' ? 'default' : item.rarity === 'SR' ? 'secondary' : 'outline'}>
-                          {item.rarity}
-                        </Badge>
-                        <span className="text-sm text-muted-foreground">{item.itemType}</span>
-                      </div>
-                    </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-red-500"
-                      onClick={() => removeFavoriteMutation.mutate(item._id)}
-                    >
-                      <Heart className="w-4 h-4 fill-current" />
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="flex items-end justify-between">
-                    <div>
-                      <p className="text-sm text-muted-foreground">当前价格</p>
-                      <p className="text-2xl font-bold">{formatCurrency(item.currentPrice)}</p>
-                    </div>
-                    <div className={`flex items-center gap-1 px-3 py-2 rounded-lg ${item.priceChange >= 0 ? 'bg-green-500/10 text-green-600' : 'bg-red-500/10 text-red-600'}`}>
-                      {item.priceChange >= 0 ? (
-                        <TrendingUp className="w-4 h-4" />
-                      ) : (
-                        <TrendingDown className="w-4 h-4" />
-                      )}
-                      <span className="font-medium">{item.priceChange >= 0 ? '+' : ''}{item.priceChange.toFixed(1)}%</span>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between">
-                    <Button
-                      variant={item.hasAlert ? 'default' : 'outline'}
-                      size="sm"
-                      onClick={() => toggleAlertMutation.mutate(item._id)}
-                      className="flex-1"
-                    >
-                      {item.hasAlert ? (
-                        <Bell className="w-4 h-4 mr-2" />
-                      ) : (
-                        <BellOff className="w-4 h-4 mr-2" />
-                      )}
-                      {item.hasAlert ? '已开启提醒' : '开启提醒'}
-                    </Button>
-                    {item.hasAlert && (
-                      <Badge variant="secondary" className="ml-2">
-                        目标: ¥{item.alertPrice}
+      {favorites.length === 0 ? (
+        <Card>
+          <CardContent className="py-12 text-center">
+            <Heart className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
+            <p className="text-muted-foreground">暂无收藏的订单</p>
+            <p className="text-sm text-muted-foreground mt-1">去星网订单看看有什么感兴趣的</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid gap-4 md:grid-cols-2">
+          {favorites.map((listing: any) => (
+            <Card key={listing._id} className="card-hover">
+              <CardHeader>
+                <div className="flex items-start justify-between">
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <Badge variant={listing.type === 'sell' ? 'destructive' : listing.type === 'buy' ? 'success' : 'default'}>
+                        {listing.type === 'sell' ? '出售' : listing.type === 'buy' ? '求购' : '交换'}
                       </Badge>
-                    )}
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(listing.createdAt).toLocaleDateString()}
+                      </span>
+                      {listing.status === 'cancelled' && (
+                        <Badge variant="outline" className="text-red-500">已取消</Badge>
+                      )}
+                    </div>
+                    <CardTitle className="text-lg">
+  {listing.items?.map((i: any) => {
+    const name = i.itemName || (typeof i.item === 'object' && i.item?.itemName) || (typeof i.item === 'string' ? `物品 #${i.item.slice(0, 8)}` : '未知');
+    const quantity = i.quantity > 1 ? ` x${i.quantity}` : '';
+    return `${name}${quantity}`;
+  }).join(', ') || '未指定物品'}
+</CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      发布者: {typeof listing.seller === 'object' ? listing.seller.username : `用户 #${typeof listing.seller === 'string' ? listing.seller.slice(0, 8) : '未知'}`}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      收藏时间: {new Date(listing.favoritedAt).toLocaleDateString()}
+                    </p>
                   </div>
-
-                  {!item.hasAlert && (
-                    <div className="pt-2 border-t">
-                      <p className="text-xs text-muted-foreground mb-2">设置价格提醒</p>
-                      <div className="flex gap-2">
-                        <Input
-                          type="number"
-                          placeholder="目标价格"
-                          className="flex-1 text-sm"
-                          value={alertPrice[item._id] || ''}
-                          onChange={(e) => setAlertPrice(prev => ({ ...prev, [item._id]: Number(e.target.value) }))}
-                        />
-                        <Button
-                          size="sm"
-                          onClick={() => setAlertMutation.mutate({ itemId: item._id, price: alertPrice[item._id] })}
-                          disabled={!alertPrice[item._id]}
-                        >
-                          <Bell className="w-4 h-4" />
-                        </Button>
-                      </div>
+                  {listing.price > 0 && (
+                    <div className="text-right">
+                      <p className="text-2xl font-bold text-primary">{formatCurrency(listing.price)}</p>
                     </div>
                   )}
-                </CardContent>
-              </Card>
-            ))
-          )
-        )}
-
-        {activeTab === 'alerts' && (
-          alerts.length === 0 ? (
-            <Card className="col-span-full">
-              <CardContent className="py-12 text-center">
-                <Bell className="w-12 h-12 mx-auto mb-4 text-muted-foreground" />
-                <p className="text-muted-foreground">暂无价格提醒</p>
-                <p className="text-sm text-muted-foreground mt-1">在收藏列表中开启价格提醒</p>
-              </CardContent>
-            </Card>
-          ) : (
-            alerts.map((item) => (
-              <Card key={item._id} className="card-hover border-l-4 border-amber-500">
-                <CardContent className="p-4">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-lg bg-amber-500/10 flex items-center justify-center">
-                        <AlertCircle className="w-5 h-5 text-amber-500" />
-                      </div>
-                      <div>
-                        <h3 className="font-medium">{item.name}</h3>
-                        <p className="text-sm text-muted-foreground">提醒价格: ¥{item.alertPrice}</p>
-                      </div>
-                    </div>
-                    <Badge variant="secondary">
-                      {item.currentPrice >= (item.alertPrice || 0) ? '已达到' : '追踪中'}
-                    </Badge>
-                  </div>
-                  <div className="mt-3 flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">当前价格: {formatCurrency(item.currentPrice)}</span>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-2">
+                  {listing.status !== 'cancelled' && !isOwnListing(listing) && (
+                    <>
+                      <Button className="flex-1" onClick={() => handleSendInterest(listing)}>
+                        <Send className="w-4 h-4 mr-2" />
+                        有意向
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => removeFavoriteMutation.mutate(listing._id)}
+                      >
+                        <Heart className="w-4 h-4 fill-current text-red-500" />
+                      </Button>
+                    </>
+                  )}
+                  {listing.status !== 'cancelled' && isOwnListing(listing) && (
+                    <Button className="flex-1" disabled variant="outline">
+                      <ShoppingCart className="w-4 h-4 mr-2" />
+                      自己的挂牌
+                    </Button>
+                  )}
+                  {listing.status === 'cancelled' && (
                     <Button
                       variant="outline"
                       size="sm"
-                      onClick={() => toggleAlertMutation.mutate(item._id)}
+                      className="text-red-500"
+                      onClick={() => removeFavoriteMutation.mutate(listing._id)}
                     >
-                      <BellOff className="w-4 h-4 mr-1" />
-                      关闭提醒
+                      <Trash2 className="w-4 h-4 mr-1" />
+                      删除
                     </Button>
+                  )}
+                </div>
+                {listing.type === 'trade' && listing.requestedItems && listing.requestedItems.length > 0 && (
+                  <div className="mt-4 pt-4 border-t text-sm">
+                    <p className="text-muted-foreground">期望获得:</p>
+                    <p className="font-medium">
+                      {listing.requestedItems!.map((i: any) => `${i.itemName} x${i.quantity}`).join(', ')}
+                    </p>
                   </div>
-                </CardContent>
-              </Card>
-            ))
-          )
-        )}
-      </div>
+                )}
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
     </div>
-  );
+  )
 }

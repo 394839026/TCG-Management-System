@@ -57,7 +57,7 @@ export function ShopDashboardPage() {
     );
   }
 
-  if (!shop._id) {
+  if (!id || !shopData?.data) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[600px]">
         <Package className="w-16 h-16 text-muted-foreground mb-4" />
@@ -80,7 +80,7 @@ export function ShopDashboardPage() {
           </Button>
           <div>
             <h1 className="text-3xl font-bold">{shop.name}</h1>
-            <p className="text-muted-foreground">{shop.location || '暂无地址'}</p>
+            <p className="text-muted-foreground">{shop.location?.address || '暂无地址'}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">

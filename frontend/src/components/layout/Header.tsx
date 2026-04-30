@@ -1,8 +1,11 @@
 import { Bell, Moon, Sun, User, LogOut } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { useState } from 'react'
+import { Badge } from '@/components/ui/badge'
+import { useState, useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/AuthContext'
 import { useNavigate } from 'react-router-dom'
+import { friendService, messageService, notificationService } from '@/services/api'
 
 interface HeaderProps {
   title?: string
@@ -12,6 +15,38 @@ export function Header({ title }: HeaderProps) {
   const [isDark, setIsDark] = useState(false)
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+
+  const { data: friendRequestsData } = useQuery({
+    queryKey: ['friendRequests'],
+    queryFn: () => friendService.getRequests(),
+  })
+
+  const { data: unreadMessagesData } = useQuery({
+    queryKey: ['unreadMessagesCount'],
+    queryFn: () => messageService.getUnreadCount(),
+  })
+
+  const { data: unreadNotificationsData } = useQuery({
+    queryKey: ['unreadNotificationsCount'],
+    queryFn: () => notificationService.getUnreadCount(),
+  })
+
+  const friendRequestsCount = friendRequestsData?.data?.length || 0
+  const unreadMessagesCount = unreadMessagesData?.count || 0
+  const unreadNotificationsCount = unreadNotificationsData?.count || 0
+  
+  console.log('=== Header 未读消息调试 ===')
+  console.log('friendRequestsCount:', friendRequestsCount)
+  console.log('unreadMessagesCount:', unreadMessagesCount)
+  console.log('unreadNotificationsCount:', unreadNotificationsCount)
+  console.log('totalNotifications:', friendRequestsCount + unreadMessagesCount + unreadNotificationsCount)
+  console.log('unreadMessagesData:', unreadMessagesData)
+  
+  const totalNotifications = friendRequestsCount + unreadMessagesCount + unreadNotificationsCount
+
+  const handleMessageClick = () => {
+    navigate('/messages')
+  }
 
   const toggleTheme = () => {
     setIsDark(!isDark)
@@ -23,6 +58,12 @@ export function Header({ title }: HeaderProps) {
     navigate('/login')
   }
 
+  useEffect(() => {
+    const timer = setInterval(() => {
+    }, 30000)
+    return () => clearInterval(timer)
+  }, [])
+
   return (
     <header className="sticky top-0 z-30 glass border-b border-border">
       <div className="flex items-center justify-between px-6 py-4">
@@ -31,7 +72,6 @@ export function Header({ title }: HeaderProps) {
         </div>
 
         <div className="flex items-center gap-3">
-          {/* Theme toggle */}
           <Button
             variant="ghost"
             size="icon"
@@ -41,19 +81,24 @@ export function Header({ title }: HeaderProps) {
             {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
           </Button>
 
-          {/* Notifications */}
           <Button 
             variant="ghost" 
             size="icon" 
             className="rounded-full relative"
-            onClick={() => navigate('/messages')}
+            onClick={handleMessageClick}
             title="消息中心"
           >
             <Bell className="w-5 h-5" />
-            <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
+            {totalNotifications > 0 && (
+              <Badge 
+                variant="destructive" 
+                className="absolute -top-1 -right-1 h-5 w-5 p-0 text-xs flex items-center justify-center"
+              >
+                {totalNotifications}
+              </Badge>
+            )}
           </Button>
 
-          {/* User menu */}
           <div className="flex items-center gap-2 pl-2 border-l">
             <div className="text-right hidden sm:block">
               <p className="text-sm font-medium">{user?.username || '用户'}</p>

@@ -42,8 +42,10 @@ export function TeamFormDialog({ open, onOpenChange, team }: TeamFormDialogProps
       toast.success('战队创建成功')
       onOpenChange(false)
     },
-    onError: () => {
-      toast.error('创建失败')
+    onError: (error: any) => {
+      console.error('创建战队失败:', error)
+      const message = error?.response?.data?.message || error?.response?.data?.errors?.[0]?.msg || error?.message || '创建失败'
+      toast.error(message)
     },
   })
 
@@ -62,8 +64,10 @@ export function TeamFormDialog({ open, onOpenChange, team }: TeamFormDialogProps
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (team?._id) {
-      updateMutation.mutate({ id: team._id, data: formData })
+    console.log('提交的数据:', formData)
+    console.log('当前用户token:', localStorage.getItem('token'))
+    if (team?.id) {
+      updateMutation.mutate({ id: String(team.id), data: formData })
     } else {
       createMutation.mutate(formData)
     }

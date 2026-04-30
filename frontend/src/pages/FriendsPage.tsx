@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { User, Search, Send, Check, X, Trash2, MessageCircle, Users, Clock } from 'lucide-react';
-import { friendService, Friend, FriendRequest } from '@/services/api';
+import { friendService } from '@/services/api';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
 
@@ -15,17 +15,17 @@ export function FriendsPage() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
 
-  const { data: friendsData, isLoading: friendsLoading } = useQuery({
+  const { data: friendsData, isLoading: friendsLoading, error: friendsError } = useQuery({
     queryKey: ['friends'],
     queryFn: () => friendService.getFriends(),
   });
 
-  const { data: requestsData, isLoading: requestsLoading } = useQuery({
+  const { data: requestsData, isLoading: requestsLoading, error: requestsError } = useQuery({
     queryKey: ['friendRequests'],
     queryFn: () => friendService.getRequests(),
   });
 
-  const { data: searchData } = useQuery({
+  const { data: searchData, error: searchError } = useQuery({
     queryKey: ['searchUsers', searchQuery],
     queryFn: () => friendService.searchUsers(searchQuery),
     enabled: searchQuery.length > 0,
@@ -64,85 +64,95 @@ export function FriendsPage() {
     },
   });
 
-  const friends: Friend[] = friendsData?.data || [];
-  const requests: FriendRequest[] = requestsData?.data || [];
+  const friends = friendsData?.data || [];
+  const requests = requestsData?.data || [];
   const searchResults = searchData?.data || [];
 
-  const renderFriendCard = (friend: Friend) => (
-    <Card key={friend._id} className="card-hover">
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-              {friend.friend.avatar ? (
-                <img src={friend.friend.avatar} alt={friend.friend.username} className="w-full h-full rounded-full object-cover" />
-              ) : (
-                <User className="w-6 h-6 text-primary" />
-              )}
+  const renderFriendCard = (friend: any) => {
+    if (!friend) return null;
+    
+    const friendUser = friend.friend || friend.friendId;
+    
+    return (
+      <Card key={friend._id} className="card-hover">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                {friendUser?.avatar ? (
+                  <img src={friendUser.avatar} alt={friendUser.username || '用户'} className="w-full h-full rounded-full object-cover" />
+                ) : (
+                  <User className="w-6 h-6 text-primary" />
+                )}
+              </div>
+              <div>
+                <h3 className="font-medium">{friendUser?.username || '未知用户'}</h3>
+                <p className="text-sm text-muted-foreground">好友</p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-medium">{friend.friend.username}</h3>
-              <p className="text-sm text-muted-foreground">好友</p>
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => navigate(`/messages?friendId=${friendUser._id}`)}>
+                <MessageCircle className="w-4 h-4" />
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="text-red-500 hover:text-red-600"
+                onClick={() => (friend.userId || friendUser?._id) && removeFriendMutation.mutate(friend.userId || friendUser?._id)}
+              >
+                <Trash2 className="w-4 h-4" />
+              </Button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => navigate('/messages')}>
-              <MessageCircle className="w-4 h-4" />
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              className="text-red-500 hover:text-red-600"
-              onClick={() => removeFriendMutation.mutate(friend.friendId)}
-            >
-              <Trash2 className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+        </CardContent>
+      </Card>
+    );
+  };
 
-  const renderRequestCard = (request: FriendRequest) => (
-    <Card key={request._id}>
-      <CardContent className="p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
-              {request.from.avatar ? (
-                <img src={request.from.avatar} alt={request.from.username} className="w-full h-full rounded-full object-cover" />
-              ) : (
-                <User className="w-6 h-6 text-primary" />
-              )}
+  const renderRequestCard = (request: any) => {
+    if (!request) return null;
+    return (
+      <Card key={request._id}>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                {request.from?.avatar ? (
+                  <img src={request.from.avatar} alt={request.from.username || '用户'} className="w-full h-full rounded-full object-cover" />
+                ) : (
+                  <User className="w-6 h-6 text-primary" />
+                )}
+              </div>
+              <div>
+                <h3 className="font-medium">{request.from?.username || '未知用户'}</h3>
+                <p className="text-sm text-muted-foreground">请求添加你为好友</p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-medium">{request.from.username}</h3>
-              <p className="text-sm text-muted-foreground">请求添加你为好友</p>
+            <div className="flex items-center gap-2">
+              <Button 
+                size="sm" 
+                onClick={() => acceptMutation.mutate(request._id)}
+                disabled={acceptMutation.isPending}
+              >
+                <Check className="w-4 h-4" />
+              </Button>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => rejectMutation.mutate(request._id)}
+                disabled={rejectMutation.isPending}
+              >
+                <X className="w-4 h-4" />
+              </Button>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <Button 
-              size="sm" 
-              onClick={() => acceptMutation.mutate(request._id)}
-              disabled={acceptMutation.isPending}
-            >
-              <Check className="w-4 h-4" />
-            </Button>
-            <Button 
-              variant="outline" 
-              size="sm" 
-              onClick={() => rejectMutation.mutate(request._id)}
-              disabled={rejectMutation.isPending}
-            >
-              <X className="w-4 h-4" />
-            </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+        </CardContent>
+      </Card>
+    );
+  };
 
-  const renderSearchResult = (user: { _id: string; username: string; avatar?: string; isFriend?: boolean; hasRequest?: boolean }) => {
+  const renderSearchResult = (user: any) => {
+    if (!user) return null;
     return (
       <Card key={user._id}>
         <CardContent className="p-4">
@@ -156,7 +166,7 @@ export function FriendsPage() {
                 )}
               </div>
               <div>
-                <h3 className="font-medium">{user.username}</h3>
+                <h3 className="font-medium">{user.username || '未知用户'}</h3>
                 {user.isFriend && (
                   <Badge variant="success" className="text-xs mt-1">已为好友</Badge>
                 )}
@@ -180,6 +190,23 @@ export function FriendsPage() {
       </Card>
     );
   };
+
+  if (friendsError || requestsError || searchError) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold">好友系统</h1>
+          <p className="text-muted-foreground mt-1">管理你的好友关系</p>
+        </div>
+        <Card>
+          <CardContent className="py-12 text-center">
+            <p className="text-red-500 mb-2">加载失败</p>
+            <Button onClick={() => window.location.reload()}>刷新页面</Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -248,7 +275,7 @@ export function FriendsPage() {
               </CardContent>
             </Card>
           ) : (
-            friends.map(renderFriendCard)
+            friends.filter(Boolean).map(renderFriendCard)
           )
         )}
 
@@ -265,7 +292,7 @@ export function FriendsPage() {
               </CardContent>
             </Card>
           ) : (
-            requests.map(renderRequestCard)
+            requests.filter(Boolean).map(renderRequestCard)
           )
         )}
 
@@ -285,7 +312,7 @@ export function FriendsPage() {
               </CardContent>
             </Card>
           ) : (
-            searchResults.map(renderSearchResult)
+            searchResults.filter(Boolean).map(renderSearchResult)
           )
         )}
       </div>

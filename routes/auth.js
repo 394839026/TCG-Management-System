@@ -3,6 +3,7 @@ const router = express.Router();
 const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
+const Notification = require('../models/Notification');
 const { protect, authorize } = require('../middleware/auth');
 
 // 生成JWT令牌
@@ -10,6 +11,21 @@ const generateToken = (id) => {
   return jwt.sign({ id }, process.env.JWT_SECRET, {
     expiresIn: process.env.JWT_EXPIRE
   });
+};
+
+// 发送通知
+const sendNotification = async (recipient, type, title, content, data = {}) => {
+  try {
+    await Notification.create({
+      recipient,
+      type,
+      title,
+      content,
+      data,
+    });
+  } catch (error) {
+    console.error('发送通知错误:', error);
+  }
 };
 
 // @route   POST /api/auth/register
@@ -51,14 +67,27 @@ router.post('/register', [
       password
     });
 
+    // 发送欢迎通知
+    await sendNotification(
+      user._id,
+      'welcome',
+      '🎉 欢迎加入！',
+      `亲爱的 ${user.username}，欢迎来到卡牌综合管理系统！开始探索你的卡牌收藏之旅吧！`,
+      { username: user.username }
+    );
+
     // 返回用户信息和token
     res.status(201).json({
       success: true,
       data: {
         _id: user._id,
+        uid: user.uid,
         username: user.username,
         email: user.email,
         role: user.role,
+        level: user.level,
+        exp: user.exp,
+        points: user.points,
         token: generateToken(user._id)
       }
     });
@@ -101,9 +130,13 @@ router.post('/login', [
       success: true,
       data: {
         _id: user._id,
+        uid: user.uid,
         username: user.username,
         email: user.email,
         role: user.role,
+        level: user.level,
+        exp: user.exp,
+        points: user.points,
         token: generateToken(user._id)
       }
     });
@@ -118,9 +151,24 @@ router.post('/login', [
 // @access  Private
 router.get('/me', protect, async (req, res) => {
   try {
+    const user = await User.findById(req.user._id);
+    const expNeeded = user.getExpForNextLevel();
+    const expProgress = user.getExpProgress();
+    const canCheckIn = user.canCheckIn();
+    
     res.json({
       success: true,
-      data: req.user
+      data: {
+        ...user.toObject(),
+        level: user.level,
+        exp: user.exp,
+        points: user.points,
+        expNeeded: expNeeded,
+        expProgress: expProgress,
+        canCheckIn: canCheckIn,
+        totalCheckIns: user.totalCheckIns || 0,
+        lastCheckInDate: user.lastCheckInDate
+      }
     });
   } catch (error) {
     console.error(error);
@@ -166,6 +214,7 @@ router.put('/profile',
         message: '个人资料更新成功',
         data: {
           _id: user._id,
+          uid: user.uid,
           username: user.username,
           email: user.email,
           role: user.role,
@@ -224,11 +273,14 @@ router.get('/users/:userId/profile', protect, async (req, res) => {
       success: true,
       data: {
         _id: user._id,
+        uid: user.uid,
         username: user.username,
         email: user.email,
         role: user.role,
         avatar: user.avatar,
         bio: user.bio,
+        level: user.level,
+        points: user.points,
         createdAt: user.createdAt
       }
     });
@@ -297,6 +349,7 @@ router.post('/admin/register',
         message: '用户创建成功',
         data: {
           _id: user._id,
+          uid: user.uid,
           username: user.username,
           email: user.email,
           role: user.role

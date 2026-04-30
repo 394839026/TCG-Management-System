@@ -9,6 +9,8 @@ const Friendship = require('../models/Friendship');
 // @access  Private
 router.get('/', protect, async (req, res) => {
   try {
+    console.log('获取好友列表 - 用户ID:', req.user._id);
+    
     const friendships = await Friendship.find({
       $or: [
         { requester: req.user._id, status: 'accepted' },
@@ -18,13 +20,23 @@ router.get('/', protect, async (req, res) => {
       .populate('requester', 'username avatar email')
       .sort({ createdAt: -1 });
 
-    const friends = friendships.map(f => ({
-      _id: f._id,
-      userId: f.requester._id.toString() === req.user._id.toString() ? f.addressee._id : f.requester._id,
-      friendId: f.requester._id.toString() === req.user._id.toString() ? f.addressee : f.requester,
-      status: f.status,
-      createdAt: f.createdAt
-    }));
+    console.log('找到的友谊关系:', friendships.length);
+    console.log('友谊关系详情:', friendships);
+
+    const friends = friendships.map(f => {
+      const isRequester = f.requester._id.toString() === req.user._id.toString();
+      const friend = isRequester ? f.addressee : f.requester;
+      return {
+        _id: f._id,
+        userId: friend._id,
+        friendId: friend._id,
+        friend: friend,
+        status: f.status,
+        createdAt: f.createdAt
+      };
+    });
+
+    console.log('处理后的好友列表:', friends);
 
     res.json({
       success: true,
@@ -213,6 +225,26 @@ router.delete('/:friendId', protect, async (req, res) => {
     });
   } catch (error) {
     console.error('删除好友错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   GET /api/friends/requests/count
+// @desc    获取未读好友请求数量
+// @access  Private
+router.get('/requests/count', protect, async (req, res) => {
+  try {
+    const count = await Friendship.countDocuments({
+      addressee: req.user._id,
+      status: 'pending'
+    });
+
+    res.json({
+      success: true,
+      count: count
+    });
+  } catch (error) {
+    console.error('获取好友请求数量错误:', error);
     res.status(500).json({ message: '服务器错误' });
   }
 });

@@ -6,24 +6,18 @@ const protect = async (req, res, next) => {
 
   if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
     try {
-      // 从header中获取token
       token = req.headers.authorization.split(' ')[1];
-
-      // 验证token
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-      // 获取用户信息(不包含密码)
       req.user = await User.findById(decoded.id).select('-password');
-
       next();
     } catch (error) {
-      console.error(error);
-      res.status(401).json({ message: '未授权，令牌无效' });
+      console.error('[AUTH] Token verification failed:', error.message);
+      return res.status(401).json({ message: '未授权，令牌无效' });
     }
   }
 
   if (!token) {
-    res.status(401).json({ message: '未授权，没有令牌' });
+    return res.status(401).json({ message: '未授权，没有令牌' });
   }
 };
 

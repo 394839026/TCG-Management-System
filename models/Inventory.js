@@ -23,12 +23,15 @@ const inventoryItemSchema = new mongoose.Schema({
   },
   rarity: {
     type: String,
-    enum: ['common', 'uncommon', 'rare', 'super_rare', 'ultra_rare', 'secret_rare', 'other'],
-    default: 'common'
+    enum: ['N', 'N_FOIL', 'U', 'U_FOIL', 'R', 'E', 'AA', 'AA_SIGN', 'AA_ULTIMATE', 'common', 'uncommon', 'rare', 'super_rare', 'ultra_rare', 'secret_rare', 'other'],
+    default: 'N'
+  },
+  gameType: {
+    type: String,
+    enum: ['rune', 'digimon', 'pokemon', 'shadowverse-evolve']
   },
   itemType: {
     type: String,
-    enum: ['card', 'booster', 'box', 'accessory', 'other'],
     default: 'card'
   },
   quantity: {
@@ -55,7 +58,6 @@ const inventoryItemSchema = new mongoose.Schema({
     type: String,
     trim: true
   }],
-  // 新增字段 - 图片和获取信息
   images: [{
     type: String
   }],
@@ -73,7 +75,6 @@ const inventoryItemSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
-  // 收藏和愿望单标记
   isFavorite: {
     type: Boolean,
     default: false
@@ -82,7 +83,6 @@ const inventoryItemSchema = new mongoose.Schema({
     type: Boolean,
     default: false
   },
-  // 交易历史
   tradeHistory: [{
     type: { type: String, enum: ['buy', 'sell', 'trade'] },
     price: Number,
@@ -90,7 +90,6 @@ const inventoryItemSchema = new mongoose.Schema({
     counterparty: String,
     notes: String
   }],
-  // 卡牌特定信息
   setName: {
     type: String,
     trim: true,
@@ -103,7 +102,7 @@ const inventoryItemSchema = new mongoose.Schema({
   },
   language: {
     type: String,
-    default: 'zh'
+    default: 'english'
   },
   foil: {
     type: Boolean,
@@ -119,7 +118,6 @@ const inventoryItemSchema = new mongoose.Schema({
     trim: true,
     default: ''
   },
-  // 所有权(用于转移历史)
   owner: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
@@ -131,18 +129,31 @@ const inventoryItemSchema = new mongoose.Schema({
   updatedAt: {
     type: Date,
     default: Date.now
+  },
+  runeCardInfo: {
+    version: {
+      type: String,
+      enum: ['OGN', 'SFD', 'UNL', 'P'],
+      default: 'OGN'
+    },
+    cardNumber: {
+      type: String,
+      trim: true,
+      default: ''
+    }
+  },
+  cardProperty: {
+    type: String,
+    enum: ['传奇', '英雄', '专属', '单位', '装备', '法术', '战场', '指示物', '符文'],
+    default: null
   }
 });
 
-// 更新时自动设置 updatedAt
-inventoryItemSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
-  next();
+inventoryItemSchema.pre('save', function() {
+  this.updatedAt = new Date();
 });
 
-// 索引优化查询
 inventoryItemSchema.index({ userId: 1 });
 inventoryItemSchema.index({ userId: 1, itemType: 1 });
-inventoryItemSchema.index({ itemName: 'text' });
 
 module.exports = mongoose.model('InventoryItem', inventoryItemSchema);

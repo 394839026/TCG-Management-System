@@ -19,7 +19,7 @@ export function ShopFormDialog({ open, onOpenChange, shop }: ShopFormDialogProps
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    location: '',
+    address: '',
   })
 
   useEffect(() => {
@@ -27,19 +27,20 @@ export function ShopFormDialog({ open, onOpenChange, shop }: ShopFormDialogProps
       setFormData({
         name: shop.name || '',
         description: shop.description || '',
-        location: shop.location || '',
+        address: shop.location?.address || '',
       })
     } else {
       setFormData({
         name: '',
         description: '',
-        location: '',
+        address: '',
       })
     }
   }, [shop, open])
 
   const createMutation = useMutation({
-    mutationFn: (data: Partial<Shop>) => shopService.create(data),
+    mutationFn: (data: { name: string; description: string; location: { address: string } }) => 
+      shopService.create({ ...data, location: { address: data.location.address, city: '', province: '', postalCode: '' } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shops'] })
       toast.success('店铺创建成功')
@@ -51,8 +52,8 @@ export function ShopFormDialog({ open, onOpenChange, shop }: ShopFormDialogProps
   })
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: string; data: Partial<Shop> }) =>
-      shopService.update(id, data),
+    mutationFn: ({ id, data }: { id: string; data: { name: string; description: string; location: { address: string } } }) =>
+      shopService.update(id, { ...data, location: { address: data.location.address, city: '', province: '', postalCode: '' } }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shops'] })
       toast.success('店铺更新成功')
@@ -65,10 +66,14 @@ export function ShopFormDialog({ open, onOpenChange, shop }: ShopFormDialogProps
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
+    const submitData = {
+      ...formData,
+      location: { address: formData.address }
+    }
     if (shop?._id) {
-      updateMutation.mutate({ id: shop._id, data: formData })
+      updateMutation.mutate({ id: shop._id, data: submitData })
     } else {
-      createMutation.mutate(formData)
+      createMutation.mutate(submitData)
     }
   }
 
@@ -99,8 +104,8 @@ export function ShopFormDialog({ open, onOpenChange, shop }: ShopFormDialogProps
               <Label htmlFor="location">地址</Label>
               <Input
                 id="location"
-                value={formData.location}
-                onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                value={formData.address}
+                onChange={(e) => setFormData({ ...formData, address: e.target.value })}
                 placeholder="店铺地址"
               />
             </div>

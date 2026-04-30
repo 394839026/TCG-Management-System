@@ -2,14 +2,27 @@ import { useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { User, Palette, Bell } from 'lucide-react'
+import { Badge } from '@/components/ui/badge'
+import { User, Palette, Bell, Copy, Check } from 'lucide-react'
 import { toast } from 'sonner'
+import { useAuth } from '@/contexts/AuthContext'
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'notifications'>('profile')
+  const [copied, setCopied] = useState(false)
+  const { user } = useAuth()
 
   const handleSave = () => {
     toast.success('设置已保存')
+  }
+
+  const handleCopyUid = () => {
+    if (user?.uid) {
+      navigator.clipboard.writeText(user.uid)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+      toast.success('UID已复制到剪贴板')
+    }
   }
 
   return (
@@ -57,12 +70,39 @@ export function SettingsPage() {
           <CardContent className="space-y-4">
             <div className="grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
+                <label className="text-sm font-medium">用户ID (UID)</label>
+                <div className="flex items-center gap-2">
+                  <Input 
+                    value={user?.uid || '加载中...'} 
+                    readOnly 
+                    className="bg-muted"
+                  />
+                  <Button 
+                    variant="outline" 
+                    size="icon" 
+                    onClick={handleCopyUid}
+                    disabled={!user?.uid}
+                  >
+                    {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  </Button>
+                </div>
+                <p className="text-xs text-muted-foreground">这是你的唯一用户标识，无法修改</p>
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">角色</label>
+                <Badge variant="outline" className="px-3 py-2">
+                  {user?.role === 'superadmin' ? '超级管理员' : user?.role === 'admin' ? '管理员' : '普通用户'}
+                </Badge>
+              </div>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
                 <label className="text-sm font-medium">用户名</label>
-                <Input defaultValue="玩家123" />
+                <Input defaultValue={user?.username || '玩家123'} />
               </div>
               <div className="space-y-2">
                 <label className="text-sm font-medium">邮箱</label>
-                <Input type="email" defaultValue="player@example.com" />
+                <Input type="email" defaultValue={user?.email || 'player@example.com'} />
               </div>
             </div>
             <div className="space-y-2">
@@ -70,7 +110,7 @@ export function SettingsPage() {
               <textarea
                 className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                 placeholder="介绍一下自己..."
-                defaultValue="热爱集换式卡牌游戏的玩家"
+                defaultValue={user?.bio || '热爱集换式卡牌游戏的玩家'}
               />
             </div>
             <Button onClick={handleSave}>保存更改</Button>

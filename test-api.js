@@ -1,71 +1,47 @@
 const axios = require('axios');
 
-const API_URL = 'http://localhost:3000/api/auth';
-
-async function testAuth() {
-  console.log('=== 开始测试认证系统 ===\n');
-
-  // 测试数据
-  const testUser = {
-    username: 'testuser',
-    email: 'test@example.com',
-    password: 'password123'
-  };
-
+async function testAPI() {
   try {
-    // 1. 测试注册
-    console.log('1. 测试用户注册...');
-    const registerResponse = await axios.post(`${API_URL}/register`, testUser);
-    console.log('✓ 注册成功!');
-    console.log('返回数据:', JSON.stringify(registerResponse.data, null, 2));
-    const token = registerResponse.data.data.token;
-
-    // 2. 测试登录
-    console.log('\n2. 测试用户登录...');
-    const loginResponse = await axios.post(`${API_URL}/login`, {
-      email: testUser.email,
-      password: testUser.password
+    // 登录获取token
+    const loginRes = await axios.post('http://localhost:8000/api/auth/login', {
+      email: 'test@example.com',
+      password: 'password123'
     });
-    console.log('✓ 登录成功!');
-    console.log('返回数据:', JSON.stringify(loginResponse.data, null, 2));
 
-    // 3. 测试获取用户信息(受保护的路由)
-    console.log('\n3. 测试获取用户信息(需要token)...');
-    const meResponse = await axios.get(`${API_URL}/me`, {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
+    console.log('登录成功:', loginRes.data.user.username);
+
+    const token = loginRes.data.token;
+
+    // 获取战队详情
+    const teamRes = await axios.get('http://localhost:8000/api/teams/69f24fc569845bee15610d8c', {
+      headers: { Authorization: `Bearer ${token}` }
     });
-    console.log('✓ 获取用户信息成功!');
-    console.log('返回数据:', JSON.stringify(meResponse.data, null, 2));
 
-    // 4. 测试仪表板路由
-    console.log('\n4. 测试仪表板路由...');
-    const dashboardResponse = await axios.get('http://localhost:3000/api/dashboard', {
-      headers: {
-        'Authorization': `Bearer ${token}`
-      }
-    });
-    console.log('✓ 访问仪表板成功!');
-    console.log('返回数据:', JSON.stringify(dashboardResponse.data, null, 2));
+    const team = teamRes.data.data;
 
-    // 5. 测试无效token
-    console.log('\n5. 测试无效token...');
-    try {
-      await axios.get(`${API_URL}/me`, {
-        headers: {
-          'Authorization': 'Bearer invalid_token'
-        }
+    console.log('\n=== 战队数据 ===');
+    console.log('team.id:', team.id);
+    console.log('team.owner:', team.owner);
+    console.log('typeof team.owner:', typeof team.owner);
+    console.log('team.members.length:', team.members?.length);
+
+    if (team.members && team.members.length > 0) {
+      team.members.forEach((m, i) => {
+        console.log(`\n成员 ${i + 1}:`);
+        console.log('  user:', m.user);
+        console.log('  typeof user:', typeof m.user);
+        console.log('  role:', m.role);
       });
-    } catch (error) {
-      console.log('✓ 正确拒绝了无效token');
-      console.log('错误信息:', error.response.data.message);
     }
 
-    console.log('\n=== 所有测试通过! ===');
+    console.log('\n=== 关键比较 ===');
+    console.log('user._id: 69f1d72462252a727af6f3e2');
+    console.log('team.owner: 69f1d72462252a727af6f3e2');
+    console.log('String(team.owner) === String(user._id):', String(team.owner) === '69f1d72462252a727af6f3e2');
+
   } catch (error) {
-    console.error('✗ 测试失败:', error.response?.data || error.message);
+    console.error('错误:', error.response?.data || error.message);
   }
 }
 
-testAuth();
+testAPI();

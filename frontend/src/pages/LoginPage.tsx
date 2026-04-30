@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/contexts/AuthContext'
 import { Button } from '@/components/ui/button'
@@ -11,12 +11,19 @@ export function LoginPage() {
   const [isLogin, setIsLogin] = useState(true)
   const [isLoading, setIsLoading] = useState(false)
   const navigate = useNavigate()
-  const { login, register } = useAuth()
+  const { login, register, isAuthenticated, isLoading: authLoading } = useAuth()
   const [formData, setFormData] = useState({
     email: '',
     password: '',
     username: '',
   })
+
+  useEffect(() => {
+    if (!authLoading && isAuthenticated) {
+      console.log('LoginPage: User authenticated, navigating to dashboard...')
+      navigate('/dashboard', { replace: true })
+    }
+  }, [isAuthenticated, authLoading, navigate])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -27,18 +34,12 @@ export function LoginPage() {
       
       if (isLogin) {
         await login(formData.email, formData.password)
-        console.log('Login successful, navigating to dashboard...')
+        console.log('Login successful, waiting for state update...')
         toast.success('登录成功！')
-        
-        // Navigate immediately without setTimeout
-        navigate('/dashboard', { replace: true })
       } else {
         await register(formData.username, formData.email, formData.password)
-        console.log('Registration successful, navigating to dashboard...')
+        console.log('Registration successful, waiting for state update...')
         toast.success('注册成功！')
-        
-        // Navigate immediately without setTimeout
-        navigate('/dashboard', { replace: true })
       }
     } catch (error: any) {
       console.error('Login/Register error:', error)
@@ -78,7 +79,7 @@ export function LoginPage() {
             {[
               { label: '库存管理', value: '智能分类' },
               { label: '战队系统', value: '共享资源' },
-              { label: '店铺管理', value: '销售统计' },
+              { label: '店铺列表', value: '销售统计' },
               { label: '交易市场', value: '安全可靠' },
             ].map((item) => (
               <div key={item.label} className="bg-white/10 backdrop-blur-sm rounded-lg p-4 border border-white/20">

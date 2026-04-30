@@ -9,6 +9,7 @@ interface AuthContextType {
   logout: () => void
   isAuthenticated: boolean
   isLoading: boolean
+  setUser: (user: User | null) => void
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -19,22 +20,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    // Check for existing auth on mount
-    try {
-      const storedUser = authService.getCurrentUser()
-      const storedToken = authService.getToken()
-      
-      if (storedUser && storedToken) {
-        setUser(storedUser)
-        setToken(storedToken)
+    const initAuth = async () => {
+      try {
+        const storedUser = authService.getCurrentUser()
+        const storedToken = authService.getToken()
+        
+        if (storedUser && storedToken) {
+          setUser(storedUser)
+          setToken(storedToken)
+          
+          // 从后端刷新用户信息，获取完整的等级数据
+          try {
+            const profileResponse = await authService.getProfile()
+            if (profileResponse.success) {
+              const updatedUser = profileResponse.data
+              authService.setAuth(storedToken, updatedUser)
+              setUser(updatedUser)
+            }
+          } catch (error) {
+            console.error('Failed to refresh user profile:', error)
+          }
+        }
+      } catch (error) {
+        console.error('Failed to restore auth from localStorage:', error)
+        localStorage.removeItem('user')
+        localStorage.removeItem('token')
       }
-    } catch (error) {
-      console.error('Failed to restore auth from localStorage:', error)
-      // Clear invalid data
-      localStorage.removeItem('user')
-      localStorage.removeItem('token')
+      setIsLoading(false)
     }
-    setIsLoading(false)
+    
+    initAuth()
   }, [])
 
   const login = async (email: string, password: string) => {
@@ -47,15 +62,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         console.log('AuthContext: Setting auth data...', response.user)
         // Store in localStorage first
         authService.setAuth(response.token, response.user)
-        // Update React state
+        // Update React state synchronously
         setUser(response.user)
         setToken(response.token)
-        console.log('AuthContext: Auth state updated successfully')
-        
-        // Return a promise that resolves after state updates
+        // Wait for state to be committed using setTimeout with 0 delay
         return new Promise<void>((resolve) => {
           setTimeout(() => {
-            console.log('AuthContext: Login promise resolved')
+            console.log('AuthContext: Auth state updated successfully')
             resolve()
           }, 0)
         })
@@ -105,6 +118,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setToken(null)
   }
 
+  const updateUser = (newUser: User | null) => {
+    setUser(newUser)
+    if (newUser && token) {
+      authService.setAuth(token, newUser)
+    }
+  }
+
   return (
     <AuthContext.Provider
       value={{
@@ -115,6 +135,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout,
         isAuthenticated: !!user && !!token,
         isLoading,
+        setUser: updateUser,
       }}
     >
       {children}

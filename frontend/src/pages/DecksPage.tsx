@@ -3,16 +3,32 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { BookOpen, Plus, Heart, Eye } from 'lucide-react'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { BookOpen, Plus, Heart, Eye, Trash2 } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { deckService, Deck } from '@/services/api'
 import { toast } from 'sonner'
 import { DeckFormDialog } from '@/components/decks/DeckFormDialog'
 
+const GAME_TYPES: Record<string, string> = {
+  'rune': '符文战场',
+  'digimon': '数码宝贝',
+  'pokemon': '宝可梦',
+}
+
+const FORMAT_TYPES: Record<string, string> = {
+  'casual': '休闲',
+  'competitive': '竞技',
+  'creative': '脑洞',
+  'top-deck': '上位构筑',
+}
+
 export function DecksPage() {
   const [activeTab, setActiveTab] = useState<'my' | 'public' | 'favorites'>('my')
   const [formOpen, setFormOpen] = useState(false)
   const [editingDeck, setEditingDeck] = useState<Deck | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [deletingDeckId, setDeletingDeckId] = useState<string | null>(null)
   const queryClient = useQueryClient()
   const navigate = useNavigate()
 
@@ -26,6 +42,20 @@ export function DecksPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['decks'] })
       toast.success('点赞成功')
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deckService.delete(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['decks'] })
+      toast.success('卡组已删除')
+      setDeleteDialogOpen(false)
+      setDeletingDeckId(null)
+    },
+    onError: (error: any) => {
+      const errorMsg = error.response?.data?.message || '删除失败'
+      toast.error(errorMsg)
     },
   })
 
@@ -88,7 +118,7 @@ export function DecksPage() {
                 <div className="flex items-start justify-between">
                   <div>
                     <CardTitle className="text-lg">{deck.name}</CardTitle>
-                    <CardDescription>{deck.game} · {deck.format || '无格式'}</CardDescription>
+                    <CardDescription>{GAME_TYPES[deck.game] || deck.game} · {deck.format ? FORMAT_TYPES[deck.format] || deck.format : '无定位'}</CardDescription>
                   </div>
                   {deck.isPublic ? (
                     <Badge variant="success">公开</Badge>
@@ -125,6 +155,21 @@ export function DecksPage() {
                   <div className="flex gap-2 pt-2">
                     <Button variant="outline" size="sm" className="flex-1" onClick={() => { setEditingDeck(deck); setFormOpen(true) }}>编辑</Button>
                     <Button size="sm" className="flex-1" onClick={() => navigate(`/decks/${deck._id}`)}>查看</Button>
+                    {activeTab === 'my' && (
+                      <Button 
+                        variant="destructive" 
+                        size="sm" 
+                        className="flex-1"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setDeletingDeckId(deck._id)
+                          setDeleteDialogOpen(true)
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        删除
+                      </Button>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -138,6 +183,40 @@ export function DecksPage() {
         onOpenChange={setFormOpen} 
         deck={editingDeck} 
       />
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>确认删除</DialogTitle>
+            <DialogDescription>
+              您确定要删除这个卡组吗？此操作无法撤销。
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => {
+                setDeleteDialogOpen(false)
+                setDeletingDeckId(null)
+              }}
+              disabled={deleteMutation.isPending}
+            >
+              取消
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={() => {
+                if (deletingDeckId) {
+                  deleteMutation.mutate(deletingDeckId)
+                }
+              }}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? '删除中...' : '删除'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

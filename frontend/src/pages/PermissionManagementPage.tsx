@@ -36,7 +36,6 @@ interface Permissions {
 }
 
 interface UserDetail extends User {
-  uid?: string
   createdAt?: string
   userType?: string
   permissions?: Permissions

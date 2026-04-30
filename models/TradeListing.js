@@ -1,6 +1,11 @@
 const mongoose = require('mongoose');
 
 const tradeListingSchema = new mongoose.Schema({
+  orderNumber: {
+    type: String,
+    unique: true,
+    required: true
+  },
   seller: { 
     type: mongoose.Schema.Types.ObjectId, 
     ref: 'User', 
@@ -14,8 +19,11 @@ const tradeListingSchema = new mongoose.Schema({
   items: [{
     item: { 
       type: mongoose.Schema.Types.ObjectId, 
-      ref: 'InventoryItem',
-      required: true
+      ref: 'InventoryItem'
+    },
+    itemName: { 
+      type: String, 
+      trim: true 
     },
     quantity: { 
       type: Number, 
@@ -82,9 +90,25 @@ tradeListingSchema.index({ seller: 1, status: 1 });
 tradeListingSchema.index({ type: 1, status: 1 });
 tradeListingSchema.index({ createdAt: -1 });
 
-// 自动更新updatedAt
+// 生成订单号函数
+function generateOrderNumber() {
+  const date = new Date();
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+  return `ORD${year}${month}${day}${hours}${minutes}${seconds}${random}`;
+}
+
+// 更新时间戳和生成订单号
 tradeListingSchema.pre('save', function(next) {
-  this.updatedAt = Date.now();
+  this.updatedAt = new Date();
+  if (!this.orderNumber) {
+    this.orderNumber = generateOrderNumber();
+  }
   next();
 });
 
