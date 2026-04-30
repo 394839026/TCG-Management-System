@@ -24,7 +24,7 @@ export function TeamDetailPage() {
   });
 
   const removeMemberMutation = useMutation({
-    mutationFn: (memberId: string) => teamService.update(id!, { members: [] }),
+    mutationFn: () => teamService.update(id!, { members: [] }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['team', id] });
       toast.success('成员已移除');
@@ -32,7 +32,7 @@ export function TeamDetailPage() {
   });
 
   const promoteMemberMutation = useMutation({
-    mutationFn: (memberId: string) => teamService.update(id!, { members: [] }),
+    mutationFn: () => teamService.update(id!, { members: [] }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['team', id] });
       toast.success('权限已更新');

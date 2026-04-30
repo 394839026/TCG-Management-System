@@ -7,7 +7,6 @@ import { Badge } from '@/components/ui/badge';
 import { Heart, Eye, Share2, Copy, Check, ArrowLeft, BookOpen, TrendingUp, Users, Trophy } from 'lucide-react';
 import { deckService, Deck } from '@/services/api';
 import { toast } from 'sonner';
-import { formatCurrency } from '@/lib/utils';
 export function DeckDetailPage() {
  const { id } = useParams<{ id: string }>();
  const navigate = useNavigate();

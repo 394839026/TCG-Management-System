@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -73,7 +73,6 @@ export function FavoritesPage() {
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState<'favorites' | 'alerts'>('favorites');
   const [alertPrice, setAlertPrice] = useState<Record<string, number>>({});
-  const queryClient = useQueryClient();
 
   const favorites: FavoriteItem[] = mockFavorites.filter(item =>
     item.name.toLowerCase().includes(searchTerm.toLowerCase())
@@ -82,7 +81,7 @@ export function FavoritesPage() {
   const alerts = favorites.filter(item => item.hasAlert);
 
   const toggleAlertMutation = useMutation({
-    mutationFn: (itemId: string) => {
+    mutationFn: (_itemId: string) => {
       toast.success('提醒设置已更新');
       return Promise.resolve({ success: true });
     },
@@ -97,7 +96,7 @@ export function FavoritesPage() {
   });
 
   const removeFavoriteMutation = useMutation({
-    mutationFn: (itemId: string) => {
+    mutationFn: (_itemId: string) => {
       toast.success('已从收藏中移除');
       return Promise.resolve({ success: true });
     },

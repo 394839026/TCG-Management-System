@@ -13,7 +13,7 @@ export function DashboardPage() {
   const navigate = useNavigate()
 
   // Fetch inventory stats
-  const { data: inventoryStats, isLoading, error } = useQuery({
+  const { data: inventoryStats, isLoading } = useQuery({
     queryKey: ['inventoryStats'],
     queryFn: () => inventoryService.getStats(),
     retry: 1,

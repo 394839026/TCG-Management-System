@@ -26,12 +26,15 @@ export function InventoryFilterDialog({ onFilter, currentFilters }: InventoryFil
   const [filters, setFilters] = useState<FilterState>(currentFilters);
 
   const toggleOption = (category: keyof FilterState, value: string) => {
-    setFilters(prev => ({
-      ...prev,
-      [category]: prev[category as keyof FilterState]?.includes(value)
-        ? prev[category as keyof FilterState]?.filter(v => v !== value) || []
-        : [...(prev[category as keyof FilterState] || []), value]
-    }));
+    setFilters(prev => {
+      const current = prev[category] as string[];
+      return {
+        ...prev,
+        [category]: current.includes(value)
+          ? current.filter((v: string) => v !== value)
+          : [...current, value]
+      };
+    });
   };
 
   const handleReset = () => {
@@ -89,7 +92,7 @@ export function InventoryFilterDialog({ onFilter, currentFilters }: InventoryFil
                 >
                   <Checkbox
                     checked={filters.rarity.includes(rarity)}
-                    onCheckedChange={() => toggleOption('rarity', rarity)}
+                    onChange={() => toggleOption('rarity', rarity)}
                     className="sr-only"
                   />
                   {rarity}
@@ -113,7 +116,7 @@ export function InventoryFilterDialog({ onFilter, currentFilters }: InventoryFil
                 >
                   <Checkbox
                     checked={filters.itemType.includes(type)}
-                    onCheckedChange={() => toggleOption('itemType', type)}
+                    onChange={() => toggleOption('itemType', type)}
                     className="sr-only"
                   />
                   {type}
@@ -137,7 +140,7 @@ export function InventoryFilterDialog({ onFilter, currentFilters }: InventoryFil
                 >
                   <Checkbox
                     checked={filters.condition.includes(condition)}
-                    onCheckedChange={() => toggleOption('condition', condition)}
+                    onChange={() => toggleOption('condition', condition)}
                     className="sr-only"
                   />
                   {condition}

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -124,7 +124,7 @@ export function FriendsPage() {
             <Button 
               size="sm" 
               onClick={() => acceptMutation.mutate(request._id)}
-              disabled={acceptMutation.isLoading}
+              disabled={acceptMutation.isPending}
             >
               <Check className="w-4 h-4" />
             </Button>
@@ -132,7 +132,7 @@ export function FriendsPage() {
               variant="outline" 
               size="sm" 
               onClick={() => rejectMutation.mutate(request._id)}
-              disabled={rejectMutation.isLoading}
+              disabled={rejectMutation.isPending}
             >
               <X className="w-4 h-4" />
             </Button>
@@ -169,7 +169,7 @@ export function FriendsPage() {
               <Button 
                 size="sm" 
                 onClick={() => sendRequestMutation.mutate(user._id)}
-                disabled={sendRequestMutation.isLoading}
+                disabled={sendRequestMutation.isPending}
               >
                 <Send className="w-4 h-4 mr-1" />
                 添加好友

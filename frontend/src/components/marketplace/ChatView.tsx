@@ -125,9 +125,9 @@ export function ChatView({ conversation, onBack }: ChatViewProps) {
  sendMutation.mutate();
  }
  }}/>
- <Button onClick={() => message.trim() && sendMutation.mutate()} disabled={!message.trim() || sendMutation.isLoading}>
- <Send className="w-4 h-4"/>
- </Button>
+ <Button onClick={() => message.trim() && sendMutation.mutate()} disabled={!message.trim() || sendMutation.isPending}>
+                  <Send className="w-4 h-4"/>
+                </Button>
  </div>
  </CardContent>
  </Card>

@@ -3,10 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { ArrowLeft, DollarSign, TrendingUp, ShoppingCart, Package, Users, Calendar, BarChart, TrendingDown } from 'lucide-react';
+import { ArrowLeft, TrendingUp, ShoppingCart, Package, Users, Calendar, BarChart, TrendingDown } from 'lucide-react';
 import { shopService, Shop } from '@/services/api';
 import { formatCurrency } from '@/lib/utils';
-import { BarChart as ReBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
+import { BarChart as ReBarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from 'recharts';
 
 export function ShopDashboardPage() {
   const { id } = useParams<{ id: string }>();

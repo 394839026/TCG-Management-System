@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -8,13 +8,11 @@ import { Input } from '@/components/ui/input'
 import { Users, Plus, Trophy, TrendingUp, Target, Shield, Star, Search, MoreVertical, Crown, Swords } from 'lucide-react'
 import { teamService, Team } from '@/services/api'
 import { TeamFormDialog } from '@/components/teams/TeamFormDialog'
-import { toast } from 'sonner'
 
 export function TeamsPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editingTeam, setEditingTeam] = useState<Team | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const queryClient = useQueryClient()
   const navigate = useNavigate()
   
   const { data: teamsData, isLoading } = useQuery({
@@ -22,16 +20,7 @@ export function TeamsPage() {
     queryFn: () => teamService.getAll(),
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => teamService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['teams'] })
-      toast.success('战队已删除')
-    },
-    onError: () => {
-      toast.error('删除失败')
-    },
-  })
+  
 
   const teams: Team[] = teamsData?.data || []
   const filteredTeams = teams.filter(team => 

@@ -1,11 +1,10 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation } from '@tanstack/react-query';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Check, X, Star, Clock, ShoppingCart, MessageCircle, ThumbsUp } from 'lucide-react';
-import { tradeService, TradeListing } from '@/services/api';
 import { toast } from 'sonner';
 import { formatCurrency } from '@/lib/utils';
 
@@ -14,12 +13,6 @@ export function TradeHistoryPage() {
   const [rating, setRating] = useState(0);
   const [review, setReview] = useState('');
   const [editingTrade, setEditingTrade] = useState<string | null>(null);
-  const queryClient = useQueryClient();
-
-  const { data: listingsData, isLoading } = useQuery({
-    queryKey: ['tradeListings'],
-    queryFn: () => tradeService.getListings(),
-  });
 
   const submitReviewMutation = useMutation({
     mutationFn: () => {
@@ -32,8 +25,6 @@ export function TradeHistoryPage() {
       toast.success('评价提交成功');
     },
   });
-
-  const listings: TradeListing[] = listingsData?.data || [];
 
   const mockTrades = [
     {

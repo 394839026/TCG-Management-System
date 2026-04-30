@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -9,13 +9,11 @@ import { Store, Plus, DollarSign, ShoppingCart, TrendingUp, Search, MapPin, User
 import { shopService, Shop } from '@/services/api'
 import { ShopFormDialog } from '@/components/shops/ShopFormDialog'
 import { formatCurrency } from '@/lib/utils'
-import { toast } from 'sonner'
 
 export function ShopsPage() {
   const [formOpen, setFormOpen] = useState(false)
   const [editingShop, setEditingShop] = useState<Shop | null>(null)
   const [searchTerm, setSearchTerm] = useState('')
-  const queryClient = useQueryClient()
   const navigate = useNavigate()
   
   const { data: shopsData, isLoading } = useQuery({
@@ -23,16 +21,7 @@ export function ShopsPage() {
     queryFn: () => shopService.getAll(),
   })
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => shopService.delete(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['shops'] })
-      toast.success('店铺已删除')
-    },
-    onError: () => {
-      toast.error('删除失败')
-    },
-  })
+  
 
   const shops: Shop[] = shopsData?.data || []
   const filteredShops = shops.filter(shop => 
