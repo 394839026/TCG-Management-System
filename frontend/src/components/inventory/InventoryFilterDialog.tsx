@@ -107,7 +107,7 @@ export function InventoryFilterDialog({ onFilter, currentFilters, selectedGame }
   const getRarityOptionsForGame = (game?: string) => {
     if (game === 'rune') {
       return runeRarityOptions.map(r => r.value).concat(otherRarityOptions.map(r => r.value));
-    } else if (game === 'digimon' || game === 'pokemon' || game === 'shadowverse-evolve') {
+    } else if (game === 'shadowverse-evolve') {
       return universalRarityOptions.map(r => r.value).concat(otherRarityOptions.map(r => r.value));
     } else {
       return [...runeRarityOptions, ...universalRarityOptions, ...otherRarityOptions].map(r => r.value);
@@ -118,7 +118,7 @@ export function InventoryFilterDialog({ onFilter, currentFilters, selectedGame }
   const getRarityOptions = () => {
     if (selectedGame === 'rune') {
       return [...runeRarityOptions, ...otherRarityOptions];
-    } else if (selectedGame === 'digimon' || selectedGame === 'pokemon' || selectedGame === 'shadowverse-evolve') {
+    } else if (selectedGame === 'shadowverse-evolve') {
       return [...universalRarityOptions, ...otherRarityOptions];
     } else {
       // 没有选择游戏时显示所有选项
@@ -168,7 +168,7 @@ export function InventoryFilterDialog({ onFilter, currentFilters, selectedGame }
         <div className="space-y-6 py-4">
           {/* 稀有度 */}
           <div>
-            <h4 className="font-medium mb-3">稀有度 {selectedGame && `- ${selectedGame === 'rune' ? '符文战场' : selectedGame === 'digimon' ? '数码宝贝' : selectedGame === 'pokemon' ? '宝可梦' : '影之诗进化对决'}`}</h4>
+            <h4 className="font-medium mb-3">稀有度 {selectedGame && `- ${selectedGame === 'rune' ? '符文战场' : '影之诗进化对决'}`}</h4>
             <div className="flex flex-wrap gap-2">
               {getRarityOptions().map((rarity) => (
                 <label

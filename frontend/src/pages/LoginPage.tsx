@@ -69,7 +69,7 @@ export function LoginPage() {
           </div>
 
           <h1 className="text-5xl font-bold mb-6 leading-tight">
-            TCG卡牌<br />综合管理系统
+            星沉智库
           </h1>
           <p className="text-lg text-white/80 mb-8 max-w-md">
             管理你的集换式卡牌收藏、组建战队、经营店铺、交易卡牌，一站式卡牌管理平台

@@ -7,6 +7,7 @@ const User = require('../models/User');
 const TeamJoinRequest = require('../models/TeamJoinRequest');
 const TeamInvite = require('../models/TeamInvite');
 const Notification = require('../models/Notification');
+const { GroupChat } = require('../models/GroupChat');
 const { body, validationResult } = require('express-validator');
 
 // @route   POST /api/teams
@@ -46,6 +47,37 @@ router.post('/', protect, [
       }]
     });
 
+    await team.save();
+
+    // 创建战队群聊
+    const groupChat = new GroupChat({
+      name: `${name}战队群`,
+      description: `这是「${name}」的专属战队群聊，所有战队成员都可以在这里交流讨论！`,
+      creator: req.user._id,
+      members: [{
+        user: req.user._id,
+        role: 'owner'
+      }],
+      type: 'team',
+      level: 2,
+      maxMembers: 200,
+      isPublic: false,
+      team: team._id
+    });
+
+    // 添加系统消息
+    const systemMessage = {
+      sender: req.user._id,
+      content: `「${name}」战队群聊已创建！欢迎所有战队成员在这里交流讨论！`,
+      readBy: [req.user._id]
+    };
+    groupChat.messages.push(systemMessage);
+    groupChat.lastMessage = systemMessage;
+
+    await groupChat.save();
+
+    // 将群聊关联到战队
+    team.groupChat = groupChat._id;
     await team.save();
 
     // 更新用户的teams数组
@@ -216,6 +248,16 @@ router.delete('/:id', protect, abac({ resource: 'team', actions: ['delete'] }), 
       { $pull: { teams: team._id } }
     );
 
+    // 删除战队群聊
+    if (team.groupChat) {
+      try {
+        await GroupChat.findByIdAndDelete(team.groupChat);
+        console.log(`战队「${team.name}」的群聊已删除`);
+      } catch (error) {
+        console.error('删除战队群聊错误:', error);
+      }
+    }
+
     await team.deleteOne();
 
     res.json({
@@ -382,6 +424,33 @@ router.put('/:id/members/requests/:requestId', protect, async (req, res) => {
       await User.findByIdAndUpdate(request.user, {
         $push: { teams: team._id }
       });
+
+      // 将成员添加到战队群聊
+      if (team.groupChat) {
+        const groupChat = await GroupChat.findById(team.groupChat);
+        if (groupChat) {
+          // 检查用户是否已经在群聊中
+          const alreadyInGroup = groupChat.members.some(m => m.user.toString() === request.user.toString());
+          if (!alreadyInGroup) {
+            groupChat.members.push({
+              user: request.user,
+              role: 'member'
+            });
+            
+            // 添加系统消息通知新成员加入
+            const user = await User.findById(request.user);
+            const systemMessage = {
+              sender: req.user._id,
+              content: `${user ? user.username : '新成员'}加入了群聊！`,
+              readBy: [req.user._id]
+            };
+            groupChat.messages.push(systemMessage);
+            groupChat.lastMessage = systemMessage;
+            
+            await groupChat.save();
+          }
+        }
+      }
 
       // 发送通知给申请人
       const notification = new Notification({
@@ -593,6 +662,32 @@ router.put('/invites/:inviteId/accept', protect, async (req, res) => {
       $push: { teams: team._id }
     });
 
+    // 将成员添加到战队群聊
+    if (team.groupChat) {
+      const groupChat = await GroupChat.findById(team.groupChat);
+      if (groupChat) {
+        // 检查用户是否已经在群聊中
+        const alreadyInGroup = groupChat.members.some(m => m.user.toString() === req.user._id.toString());
+        if (!alreadyInGroup) {
+          groupChat.members.push({
+            user: req.user._id,
+            role: 'member'
+          });
+          
+          // 添加系统消息通知新成员加入
+          const systemMessage = {
+            sender: req.user._id,
+            content: `${req.user.username}加入了群聊！`,
+            readBy: [req.user._id]
+          };
+          groupChat.messages.push(systemMessage);
+          groupChat.lastMessage = systemMessage;
+          
+          await groupChat.save();
+        }
+      }
+    }
+
     // 更新邀请状态
     invite.status = 'accepted';
     await invite.save();
@@ -786,6 +881,26 @@ router.delete('/:id/members/me', protect, async (req, res) => {
       $pull: { teams: team._id }
     });
 
+    // 从战队群聊中移除该成员
+    if (team.groupChat) {
+      const groupChat = await GroupChat.findById(team.groupChat);
+      if (groupChat) {
+        const originalLength = groupChat.members.length;
+        groupChat.members = groupChat.members.filter(m => m.user.toString() !== req.user._id.toString());
+        if (groupChat.members.length !== originalLength) {
+          // 添加系统消息通知成员离开
+          const systemMessage = {
+            sender: req.user._id,
+            content: `${req.user.username}退出了群聊！`,
+            readBy: [req.user._id]
+          };
+          groupChat.messages.push(systemMessage);
+          groupChat.lastMessage = systemMessage;
+          await groupChat.save();
+        }
+      }
+    }
+
     // 删除该用户的加入申请记录
     await TeamJoinRequest.deleteMany({
       team: team._id,
@@ -835,6 +950,27 @@ router.delete('/:id/members/:userId', protect, async (req, res) => {
     await User.findByIdAndUpdate(req.params.userId, {
       $pull: { teams: team._id }
     });
+
+    // 从战队群聊中移除该成员
+    if (team.groupChat) {
+      const groupChat = await GroupChat.findById(team.groupChat);
+      if (groupChat) {
+        const originalLength = groupChat.members.length;
+        groupChat.members = groupChat.members.filter(m => m.user.toString() !== req.params.userId.toString());
+        if (groupChat.members.length !== originalLength) {
+          // 添加系统消息通知成员被移除
+          const user = await User.findById(req.params.userId);
+          const systemMessage = {
+            sender: req.user._id,
+            content: `${user ? user.username : '成员'}被移出了群聊！`,
+            readBy: [req.user._id]
+          };
+          groupChat.messages.push(systemMessage);
+          groupChat.lastMessage = systemMessage;
+          await groupChat.save();
+        }
+      }
+    }
 
     // 删除该用户的加入申请记录
     await TeamJoinRequest.deleteMany({
@@ -1252,6 +1388,72 @@ router.get('/:id/financial-summary', protect, abac({ resource: 'team', actions: 
     });
   } catch (error) {
     console.error('获取财务摘要错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   POST /api/teams/:id/create-group-chat
+// @desc    为已创建的战队创建群聊
+// @access  Private (owner)
+router.post('/:id/create-group-chat', protect, abac({ resource: 'team', actions: ['manage'] }), async (req, res) => {
+  try {
+    const team = await Team.findById(req.params.id);
+    if (!team) {
+      return res.status(404).json({ message: '战队不存在' });
+    }
+
+    // 检查是否已有群聊
+    if (team.groupChat) {
+      return res.status(400).json({ message: '该战队已有群聊' });
+    }
+
+    // 创建战队群聊
+    const groupChat = new GroupChat({
+      name: `${team.name}战队群`,
+      description: `这是「${team.name}」的专属战队群聊，所有战队成员都可以在这里交流讨论！`,
+      creator: req.user._id,
+      members: [],
+      type: 'team',
+      level: 2,
+      maxMembers: 200,
+      isPublic: false,
+      team: team._id
+    });
+
+    // 添加所有战队成员到群聊
+    for (const member of team.members) {
+      groupChat.members.push({
+        user: member.user,
+        role: member.role === 'owner' ? 'owner' : 'member'
+      });
+    }
+
+    // 添加系统消息
+    const systemMessage = {
+      sender: req.user._id,
+      content: `「${team.name}」战队群聊已创建！欢迎所有战队成员在这里交流讨论！`,
+      readBy: [req.user._id]
+    };
+    groupChat.messages.push(systemMessage);
+    groupChat.lastMessage = systemMessage;
+
+    await groupChat.save();
+
+    // 将群聊关联到战队
+    team.groupChat = groupChat._id;
+    await team.save();
+
+    res.json({
+      success: true,
+      message: '战队群聊创建成功',
+      data: {
+        groupChatId: groupChat._id,
+        groupChatName: groupChat.name,
+        memberCount: groupChat.members.length
+      }
+    });
+  } catch (error) {
+    console.error('创建战队群聊错误:', error);
     res.status(500).json({ message: '服务器错误' });
   }
 });

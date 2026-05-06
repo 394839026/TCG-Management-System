@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const mongoose = require('mongoose');
 const { protect } = require('../middleware/auth');
 const TradeListing = require('../models/TradeListing');
 const TradeMessage = require('../models/TradeMessage');
@@ -7,55 +8,62 @@ const User = require('../models/User');
 const { body, validationResult } = require('express-validator');
 
 // @route   POST /api/trade/listings
-// @desc    发布交易信息
+// @desc    发布交易信息 - 完全绕过模型的版本
 // @access  Private
-router.post('/listings', protect, [
-  body('type').isIn(['sell', 'buy', 'trade']).withMessage('交易类型无效'),
-  body('items').optional().isArray().withMessage('物品列表必须是数组'),
-  body('price').optional().isFloat({ min: 0 }).withMessage('价格不能为负数')
-], async (req, res) => {
+router.post('/listings', protect, [], async (req, res) => {
   try {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
+    console.log('📝 收到创建订单请求:', req.body);
+
+    const { type, items, price } = req.body;
+
+    if (!type) {
+      return res.status(400).json({ message: '交易类型是必填项' });
     }
 
-    const { type, items, requestedItems, price, expiresAt } = req.body;
-
-    let processedItems = [];
-    
-    if (type === 'buy') {
-      processedItems = items?.map(item => ({
-        itemName: item.itemName || item.item || '未命名物品',
-        quantity: item.quantity || 1,
-      })) || [];
-    } else {
-      processedItems = items?.map(item => ({
-        item: item.itemId || item.item,
-        itemName: item.itemName || '未命名物品',
-        quantity: item.quantity || 1,
-      })) || [];
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ message: '请至少提供一个物品' });
     }
 
-    const listing = new TradeListing({
+    // 完全绕过模型的处理 - 直接插入数据库
+    const listingData = {
       seller: req.user._id,
       type,
-      items: processedItems,
-      requestedItems: requestedItems || [],
+      items: items.map(item => ({
+        itemName: String(item.itemName || item.item || '未命名物品').trim() || '未命名物品',
+        quantity: Math.max(1, parseInt(item.quantity) || 1)
+      })),
       price: price || 0,
-      expiresAt: expiresAt ? new Date(expiresAt) : null
-    });
+      status: 'active',
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
 
-    await listing.save();
+    console.log('💾 准备保存订单:', listingData);
+
+    // 直接插入数据库，完全绕过mongoose模型
+    const db = mongoose.connection;
+    const collection = db.collection('tradelistings');
+    const insertResult = await collection.insertOne(listingData);
+    
+    console.log('✅ 订单插入成功:', insertResult.insertedId);
+
+    // 查询回刚插入的文档
+    const savedListing = await collection.findOne({ _id: insertResult.insertedId });
 
     res.status(201).json({
       success: true,
       message: '交易信息发布成功',
-      data: listing
+      data: savedListing
     });
   } catch (error) {
-    console.error('发布交易错误:', error);
-    res.status(500).json({ message: '服务器错误' });
+    console.error('❌ 发布交易错误:', error);
+    console.error('❌ 错误堆栈:', error.stack);
+    
+    res.status(500).json({ 
+      message: '服务器错误', 
+      error: error.message,
+      stack: error.stack
+    });
   }
 });
 
@@ -90,8 +98,8 @@ router.get('/listings', async (req, res) => {
       const matchedUserIds = matchedUsers.map(user => user._id);
       
       // 2. 找到物品名称匹配的库存物品
-      const InventoryItem = mongoose.model('InventoryItem');
-      const matchedInventoryItems = await InventoryItem.find({ 
+      const InventoryModel = mongoose.model('Inventory');
+      const matchedInventoryItems = await InventoryModel.find({ 
         itemName: searchRegex 
       }).select('_id');
       
@@ -556,6 +564,29 @@ router.put('/messages/conversations/:conversationId/read', protect, async (req, 
     });
   } catch (error) {
     console.error('标记对话已读错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   PUT /api/trade/messages/read-all
+// @desc    标记所有好友消息为已读
+// @access  Private
+router.put('/messages/read-all', protect, async (req, res) => {
+  try {
+    await TradeMessage.updateMany(
+      {
+        receiver: req.user._id,
+        isRead: false
+      },
+      { isRead: true }
+    );
+
+    res.json({
+      success: true,
+      message: '所有好友消息已标记为已读'
+    });
+  } catch (error) {
+    console.error('标记所有好友消息已读错误:', error);
     res.status(500).json({ message: '服务器错误' });
   }
 });

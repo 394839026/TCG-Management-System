@@ -19,8 +19,6 @@ interface InventoryFormDialogProps {
 
 const GAME_TYPES = [
   { id: 'rune', name: '符文战场', color: 'bg-red-600' },
-  { id: 'digimon', name: '数码宝贝', color: 'bg-blue-600' },
-  { id: 'pokemon', name: '宝可梦', color: 'bg-green-600' },
   { id: 'shadowverse-evolve', name: '影之诗进化对决', color: 'bg-purple-600' },
 ]
 
@@ -67,7 +65,7 @@ export function InventoryFormDialog({ open, onOpenChange, item }: InventoryFormD
   const { user } = useAuth()
   const [formData, setFormData] = useState({
     itemName: '',
-    gameType: '',
+    gameType: [] as string[],
     itemType: '',
     rarity: '',
     quantity: 1,
@@ -98,7 +96,8 @@ export function InventoryFormDialog({ open, onOpenChange, item }: InventoryFormD
     if (item) {
       setFormData({
         itemName: item.itemName || item.name || '',
-        gameType: item.gameType || '',
+        gameType: Array.isArray(item.gameType) ? item.gameType : 
+                   (item.gameType ? [item.gameType] : []),
         itemType: item.itemType || '',
         rarity: item.rarity || '',
         quantity: item.quantity || 1,
@@ -114,7 +113,7 @@ export function InventoryFormDialog({ open, onOpenChange, item }: InventoryFormD
     } else {
       setFormData({
         itemName: '',
-        gameType: '',
+        gameType: [],
         itemType: '',
         rarity: '',
         quantity: 1,
@@ -200,15 +199,15 @@ export function InventoryFormDialog({ open, onOpenChange, item }: InventoryFormD
     let submitData: Partial<InventoryItem> = {
       ...formData,
       condition: formData.condition.toLowerCase().replace(' ', '_'),
-      runeCardInfo: formData.gameType === 'rune' && formData.itemType === 'card' 
+      runeCardInfo: formData.gameType.includes('rune') && formData.itemType === 'card' 
         ? { ...formData.runeCardInfo, version: formData.runeCardInfo.version as any } 
         : undefined,
-      cardProperty: formData.gameType === 'rune' && formData.itemType === 'card' 
+      cardProperty: formData.gameType.includes('rune') && formData.itemType === 'card' 
         ? (formData.cardProperty === '无' ? null : formData.cardProperty)
         : undefined,
     }
 
-    if (formData.gameType !== 'rune') {
+    if (!formData.gameType.includes('rune')) {
       delete submitData.runeCardInfo
       delete submitData.cardProperty
     }
@@ -228,7 +227,7 @@ export function InventoryFormDialog({ open, onOpenChange, item }: InventoryFormD
   }
 
   const isPending = createMutation.isPending || updateMutation.isPending
-  const isRuneCard = formData.gameType === 'rune' && formData.itemType === 'card'
+  const isRuneCard = formData.gameType.includes('rune') && formData.itemType === 'card'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -252,25 +251,33 @@ export function InventoryFormDialog({ open, onOpenChange, item }: InventoryFormD
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="gameType">游戏类型</Label>
+              <Label htmlFor="gameType">游戏类型（可多选）</Label>
               <div className="flex flex-wrap gap-2">
-                {GAME_TYPES.map((game) => (
-                  <Button
-                    key={game.id}
-                    type="button"
-                    variant={formData.gameType === game.id ? 'default' : 'outline'}
-                    className={`${formData.gameType === game.id ? `${game.color} text-white hover:opacity-90` : ''}`}
-                    onClick={() => {
-                      setFormData(prev => ({
-                        ...prev,
-                        gameType: prev.gameType === game.id ? '' : game.id,
-                        itemType: ''
-                      }))
-                    }}
-                  >
-                    {game.name}
-                  </Button>
-                ))}
+                {GAME_TYPES.map((game) => {
+                  const isSelected = formData.gameType.includes(game.id)
+                  return (
+                    <Button
+                      key={game.id}
+                      type="button"
+                      variant={isSelected ? 'default' : 'outline'}
+                      className={`${isSelected ? `${game.color} text-white hover:opacity-90` : ''}`}
+                      onClick={() => {
+                        setFormData(prev => {
+                          const newGameTypes = isSelected 
+                            ? prev.gameType.filter(id => id !== game.id)
+                            : [...prev.gameType, game.id]
+                          return {
+                            ...prev,
+                            gameType: newGameTypes,
+                            itemType: newGameTypes.length === 0 ? '' : prev.itemType
+                          }
+                        })
+                      }}
+                    >
+                      {game.name}
+                    </Button>
+                  )
+                })}
               </div>
             </div>
             <div className="grid gap-2">

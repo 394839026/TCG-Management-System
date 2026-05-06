@@ -1,18 +1,17 @@
-import { useState, useRef, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Search, Grid3X3, List, Upload, Download, Trash2, Edit, SlidersHorizontal, Eye, EyeOff } from 'lucide-react'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { Search, Grid3X3, List, Edit, SlidersHorizontal, Eye, EyeOff, Trash2, AlertTriangle } from 'lucide-react'
 import { inventoryService, InventoryItem } from '@/services/inventory'
 import { formatCurrency } from '@/lib/utils'
 import { toast } from 'sonner'
-import { InventoryFormDialog } from '@/components/inventory/InventoryFormDialog'
 import { InventoryFilterDialog } from '@/components/inventory/InventoryFilterDialog'
 import { UserInventoryEditDialog } from '@/components/inventory/UserInventoryEditDialog'
-import { useAuth } from '@/contexts/AuthContext'
 
 interface FilterState {
   rarity: string[];
@@ -25,8 +24,6 @@ interface FilterState {
 
 const GAME_TYPES = [
   { id: 'rune', name: '符文战场', color: 'bg-red' },
-  { id: 'digimon', name: '数码宝贝', color: 'bg-blue' },
-  { id: 'pokemon', name: '宝可梦', color: 'bg-green' },
   { id: 'shadowverse-evolve', name: '影之诗进化对决', color: 'bg-purple' },
 ]
 
@@ -57,14 +54,37 @@ const RARITY_MAP: Record<string, string> = {
   'secret_rare': '秘稀有',
 }
 
+const GAME_TYPE_MAP: Record<string, { name: string; color: string }> = {
+  'rune': { name: '符文战场', color: 'bg-red-600' },
+  'shadowverse-evolve': { name: '影之诗进化对决', color: 'bg-purple-600' },
+}
+
 const getRarityDisplay = (rarity: string) => RARITY_MAP[rarity] || rarity
 const getItemTypeDisplay = (type: string) => ITEM_TYPE_MAP[type] || type
+
+// 辅助函数：获取游戏类型数组（支持新旧数据格式）
+const getGameTypes = (gameType: string | string[] | undefined): string[] => {
+  if (!gameType) return []
+  if (Array.isArray(gameType)) return gameType
+  return [gameType]
+}
+
+// 辅助函数：获取背景渐变类名
+const getBackgroundGradient = (gameType: string | string[] | undefined) => {
+  const types = getGameTypes(gameType)
+  if (types.length === 0) return 'from-primary/10 to-accent/10'
+  
+  const firstType = types[0]
+  if (firstType === 'rune') return 'from-red-500/10 to-red-300/10'
+  if (firstType === 'shadowverse-evolve') return 'from-purple-500/10 to-purple-300/10'
+  
+  return 'from-primary/10 to-accent/10'
+}
 
 export function InventoryPage() {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [searchTerm, setSearchTerm] = useState('')
   const [showZeroQuantity, setShowZeroQuantity] = useState(true)
-  const [formOpen, setFormOpen] = useState(false)
   const [userEditOpen, setUserEditOpen] = useState(false)
   const [editingItem, setEditingItem] = useState<InventoryItem | null>(null)
   const [selectedGame, setSelectedGame] = useState<string>('')
@@ -79,11 +99,10 @@ export function InventoryPage() {
   const [page, setPage] = useState(1)
   const [sortBy, setSortBy] = useState<'userQuantity' | 'userValue' | 'runeCardInfo.cardNumber' | 'createdAt'>('createdAt')
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc')
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [clearConfirmOpen, setClearConfirmOpen] = useState(false)
   const queryClient = useQueryClient()
   const [debouncedSearch, setDebouncedSearch] = useState('')
-  const { user } = useAuth()
-  const isAdmin = user?.role === 'admin' || user?.role === 'superadmin'
+  const [pendingUpdates, setPendingUpdates] = useState<Record<string, number>>({})
 
   // Debounced search
   useEffect(() => {
@@ -108,9 +127,26 @@ export function InventoryPage() {
     }
   }, [selectedGame])
 
+  // Stable query key using JSON.stringify for arrays
+  const queryKey = useMemo(() => [
+    'inventory',
+    debouncedSearch,
+    page,
+    selectedGame,
+    JSON.stringify(filters.rarity),
+    JSON.stringify(filters.itemType),
+    filters.priceMin,
+    filters.priceMax,
+    filters.version,
+    JSON.stringify(filters.cardProperty),
+    showZeroQuantity,
+    sortBy,
+    sortOrder,
+  ], [debouncedSearch, page, selectedGame, filters, showZeroQuantity, sortBy, sortOrder])
+
   // Fetch inventory items with pagination and filters
   const { data: inventoryData, isLoading } = useQuery({
-    queryKey: ['inventory', debouncedSearch, page, selectedGame, filters.rarity.join(','), filters.itemType.join(','), filters.priceMin, filters.priceMax, filters.version, filters.cardProperty.join(','), showZeroQuantity, sortBy, sortOrder],
+    queryKey,
     queryFn: () => inventoryService.getAll({ 
       search: debouncedSearch, 
       page,
@@ -133,109 +169,17 @@ export function InventoryPage() {
     queryFn: () => inventoryService.getStats(),
   })
 
-  // Excel import mutation
-  const importMutation = useMutation({
-    mutationFn: (file: File) => inventoryService.importExcel(file),
-    onSuccess: () => {
-      // 精确失效所有inventory相关查询
-      queryClient.invalidateQueries({ 
-        queryKey: ['inventory'],
-        exact: false 
-      })
-      queryClient.invalidateQueries({ queryKey: ['inventoryStats'] })
-      toast.success('导入成功')
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
-    },
-    onError: (error: any) => {
-      const message = error?.response?.data?.message || '导入失败'
-      toast.error(message)
-    },
-  })
-
-  const handleImport = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      importMutation.mutate(file)
-    }
-  }
-
-  const handleDownloadTemplate = async () => {
-    try {
-      const blob = await inventoryService.downloadTemplate()
-      const url = window.URL.createObjectURL(blob)
-      const link = document.createElement('a')
-      link.href = url
-      link.download = 'inventory_template.xlsx'
-      document.body.appendChild(link)
-      link.click()
-      document.body.removeChild(link)
-      window.URL.revokeObjectURL(url)
-      toast.success('模板下载成功')
-    } catch (error) {
-      toast.error('下载模板失败')
-    }
-  }
-
-  const clearMutation = useMutation({
-    mutationFn: () => inventoryService.clearAll(),
+  // 清空用户库存 mutation
+  const clearUserInventoryMutation = useMutation({
+    mutationFn: () => inventoryService.clearUserInventory(),
     onSuccess: (data) => {
-      toast.success(data.message || '数据已清空')
-      // 精确失效所有inventory相关查询
-      queryClient.invalidateQueries({ 
-        queryKey: ['inventory'],
-        exact: false // 这将失效所有以 'inventory' 开头的查询
-      })
+      toast.success(data?.message || '个人库存已清空')
+      queryClient.invalidateQueries({ queryKey: ['inventory'], exact: false })
       queryClient.invalidateQueries({ queryKey: ['inventoryStats'] })
+      setClearConfirmOpen(false)
     },
     onError: (error: any) => {
       const message = error?.response?.data?.message || '清空失败'
-      toast.error(message)
-    },
-  })
-
-  const handleClearAll = () => {
-    clearMutation.mutate()
-  }
-
-  const exportMutation = useMutation({
-    mutationFn: () => inventoryService.exportExcel(),
-    onSuccess: (data) => {
-      const url = window.URL.createObjectURL(new Blob([data]))
-      const link = document.createElement('a')
-      link.href = url
-      link.setAttribute('download', 'inventory_export.xlsx')
-      document.body.appendChild(link)
-      link.click()
-      link.remove()
-      window.URL.revokeObjectURL(url)
-      toast.success('导出成功')
-    },
-    onError: () => {
-      toast.error('导出失败')
-    },
-  })
-
-  const handleExport = () => {
-    exportMutation.mutate()
-  }
-
-  // Delete mutation
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => {
-      if (!id) {
-        throw new Error('物品ID无效')
-      }
-      return inventoryService.delete(id)
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] })
-      queryClient.invalidateQueries({ queryKey: ['inventoryStats'] })
-      toast.success('物品已删除')
-    },
-    onError: (error: any) => {
-      const message = error?.response?.data?.message || error?.message || '删除失败'
       toast.error(message)
     },
   })
@@ -244,21 +188,48 @@ export function InventoryPage() {
     mutationFn: ({ itemId, quantity }: { itemId: string; quantity: number }) => {
       return inventoryService.updateUserInventory(itemId, { quantity })
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'], exact: false })
-      queryClient.invalidateQueries({ queryKey: ['inventoryStats'] })
+    onMutate: async ({ itemId, quantity }) => {
+      await queryClient.cancelQueries({ queryKey: ['inventory'] })
+      const previousData = queryClient.getQueryData(queryKey)
+      queryClient.setQueryData(queryKey, (old: any) => {
+        if (!old) return old
+        return {
+          ...old,
+          data: old.data.map((item: InventoryItem) => 
+            (item._id?.toString() || String(item.id)) === itemId 
+              ? { ...item, userQuantity: quantity }
+              : item
+          )
+        }
+      })
+      return { previousData }
     },
-    onError: (error: any) => {
+    onError: (error: any, _variables, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(queryKey, context.previousData)
+      }
       const message = error?.response?.data?.message || '更新失败'
       toast.error(message)
+    },
+    onSettled: () => {
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['inventory'] })
+        queryClient.invalidateQueries({ queryKey: ['inventoryStats'] })
+      }, 1000)
     },
   })
 
   const handleQuantityChange = (item: InventoryItem, delta: number) => {
-    const currentQuantity = item.userQuantity ?? item.quantity ?? 0
-    const newQuantity = Math.max(0, currentQuantity + delta)
     const itemId = item._id?.toString() || String(item.id)
+    const currentQuantity = (pendingUpdates[itemId] ?? item.userQuantity ?? item.quantity ?? 0)
+    const newQuantity = Math.max(0, currentQuantity + delta)
+    setPendingUpdates(prev => ({ ...prev, [itemId]: newQuantity }))
     updateQuantityMutation.mutate({ itemId, quantity: newQuantity })
+  }
+
+  const getDisplayQuantity = (item: InventoryItem) => {
+    const itemId = item._id?.toString() || String(item.id)
+    return pendingUpdates[itemId] ?? item.userQuantity ?? item.quantity ?? 0
   }
 
   const items: InventoryItem[] = inventoryData?.data || []
@@ -266,34 +237,7 @@ export function InventoryPage() {
 
   // Memoized sort - 只保留排序逻辑，筛选全部在后端完成
   const filteredItems = useMemo(() => {
-    let result = [...items]
-
-    // Sort by card number for rune cards (numeric sorting)
-    result.sort((a, b) => {
-      if (a.gameType === 'rune' && b.gameType === 'rune') {
-        const aNum = a.runeCardInfo?.cardNumber || ''
-        const bNum = b.runeCardInfo?.cardNumber || ''
-
-        // Extract numeric part from card number (e.g., "001" -> 1, "R-001" -> 1)
-        const extractNumber = (str: string) => {
-          const match = str.match(/\d+/)
-          return match ? parseInt(match[0], 10) : 0
-        }
-
-        const aNumeric = extractNumber(aNum)
-        const bNumeric = extractNumber(bNum)
-
-        if (aNumeric !== bNumeric) {
-          return aNumeric - bNumeric
-        }
-
-        // If numeric parts are equal, compare as strings
-        return aNum.localeCompare(bNum)
-      }
-      return 0
-    })
-
-    return result
+    return items
   }, [items])
 
   return (
@@ -301,71 +245,23 @@ export function InventoryPage() {
       {/* Header */}
       <div className="flex items-center justify-between flex-wrap gap-4">
         <div>
-          <h1 className="text-3xl font-bold">库存管理</h1>
-          <p className="text-muted-foreground mt-1">管理你的卡牌收藏</p>
+          <h1 className="text-3xl font-bold">个人库存管理</h1>
+          <p className="text-muted-foreground mt-1">管理你的个人卡牌收藏</p>
         </div>
-        <div className="flex items-center gap-3">
-          {isAdmin && (
-            <>
-              <Button 
-                variant="outline" 
-                onClick={() => fileInputRef.current?.click()}
-                disabled={importMutation.isPending}
-              >
-                <Upload className="w-4 h-4 mr-2" />
-                {importMutation.isPending ? '导入中...' : 'Excel导入'}
-              </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls"
-                onChange={handleImport}
-                className="hidden"
-              />
-              <Button
-                variant="outline"
-                onClick={handleDownloadTemplate}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                下载模板
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  if (window.confirm('此操作将删除所有卡牌数据，且无法撤销。确定要继续吗？')) {
-                    handleClearAll()
-                  }
-                }}
-              >
-                <Trash2 className="w-4 h-4 mr-2" />
-                清空数据
-              </Button>
-            </>
-          )}
-          {isAdmin && (
-            <Button variant="premium" onClick={() => { setEditingItem(null); setFormOpen(true) }}>
-              <Plus className="w-4 h-4 mr-2" />
-              添加物品
-            </Button>
-          )}
-          {isAdmin && (
-            <Button
-              variant="outline"
-              onClick={handleExport}
-              disabled={exportMutation.isPending}
-            >
-              <Download className="w-4 h-4 mr-2" />
-              {exportMutation.isPending ? '导出中...' : '导出数据'}
-            </Button>
-          )}
-        </div>
+        <Button
+          variant="destructive"
+          onClick={() => setClearConfirmOpen(true)}
+        >
+          <Trash2 className="w-4 h-4 mr-2" />
+          清空我的库存
+        </Button>
       </div>
 
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-6">
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">总物品数</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">种类总数</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{isLoading ? '...' : stats?.totalItems || 0}</div>
@@ -373,7 +269,7 @@ export function InventoryPage() {
         </Card>
         <Card>
           <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-muted-foreground">总数量</CardTitle>
+            <CardTitle className="text-sm font-medium text-muted-foreground">物品总数</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{isLoading ? '...' : stats?.totalQuantity || 0}</div>
@@ -387,28 +283,12 @@ export function InventoryPage() {
             <div className="text-2xl font-bold">{isLoading ? '...' : formatCurrency(stats?.totalValue || 0)}</div>
           </CardContent>
         </Card>
-        <Card className="border-blue-500/30 hover:border-blue-400">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-blue-600">数码宝贝</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{isLoading ? '...' : stats?.digimonCount || 0}</div>
-          </CardContent>
-        </Card>
         <Card className="border-red-500/30 hover:border-red-400">
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-red-600">符文战场</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{isLoading ? '...' : stats?.runeCount || 0}</div>
-          </CardContent>
-        </Card>
-        <Card className="border-green-500/30 hover:border-green-400">
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-green-600">宝可梦</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{isLoading ? '...' : stats?.pokemonCount || 0}</div>
           </CardContent>
         </Card>
         <Card className="border-purple-500/30 hover:border-purple-400">
@@ -419,6 +299,7 @@ export function InventoryPage() {
             <div className="text-2xl font-bold">{isLoading ? '...' : stats?.shadowverseEvolveCount || 0}</div>
           </CardContent>
         </Card>
+        
       </div>
 
       {/* Game Type Filter */}
@@ -449,7 +330,7 @@ export function InventoryPage() {
           className={showZeroQuantity ? 'bg-green-600 hover:bg-green-700' : ''}
         >
           {showZeroQuantity ? <Eye className="w-4 h-4 mr-1" /> : <EyeOff className="w-4 h-4 mr-1" />}
-          {showZeroQuantity ? '显示全部' : '显示我拥有的'}
+          {showZeroQuantity ? '显示全部' : '仅显示有库存'}
         </Button>
       </div>
 
@@ -558,10 +439,12 @@ export function InventoryPage() {
       ) : viewMode === 'grid' ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
           {filteredItems.map((item: InventoryItem) => {
-            const gameType = GAME_TYPES.find(g => g.id === item.gameType)
+            const gameTypes = getGameTypes(item.gameType)
+            const displayGameTypes = gameTypes.map(type => GAME_TYPE_MAP[type]).filter(Boolean)
+            
             return (
             <Card key={item.id} className="overflow-hidden card-hover group">
-              <div className={`aspect-[3/4] bg-gradient-to-br ${item.gameType === 'digimon' ? 'from-blue-500/10 to-blue-300/10' : item.gameType === 'rune' ? 'from-red-500/10 to-red-300/10' : item.gameType === 'pokemon' ? 'from-green-500/10 to-green-300/10' : item.gameType === 'shadowverse-evolve' ? 'from-purple-500/10 to-purple-300/10' : 'from-primary/10 to-accent/10'} relative overflow-hidden`}>
+              <div className={`aspect-[3/4] bg-gradient-to-br ${getBackgroundGradient(item.gameType)} relative overflow-hidden`}>
                 {item.images && item.images.length > 0 ? (
                   <img
                     src={item.images[0]}
@@ -580,20 +463,22 @@ export function InventoryPage() {
                     </Badge>
                   </div>
                 )}
-                {gameType && (
-                  <div className="absolute bottom-2 left-2">
-                    <Badge className={`${item.gameType === 'digimon' ? 'bg-blue-600' : item.gameType === 'rune' ? 'bg-red-600' : item.gameType === 'pokemon' ? 'bg-green-600' : item.gameType === 'shadowverse-evolve' ? 'bg-purple-600' : 'bg-gray-600'} text-white text-xs`}>
-                      {gameType.name}
-                    </Badge>
+                {displayGameTypes.length > 0 && (
+                  <div className="absolute bottom-2 left-2 flex gap-1 flex-wrap">
+                    {displayGameTypes.map((game, idx) => (
+                      <Badge key={idx} className={`${game.color} text-white text-xs`}>
+                        {game.name}
+                      </Badge>
+                    ))}
                   </div>
                 )}
               </div>
               <CardContent className="p-4">
                 <h3 className="font-semibold truncate">{item.itemName || item.name}</h3>
-                {item.gameType === 'rune' && item.runeCardInfo?.cardNumber && (
+                {gameTypes.includes('rune') && item.runeCardInfo?.cardNumber && (
                   <div className="text-xs text-muted-foreground mt-1">编号: {item.runeCardInfo.cardNumber}</div>
                 )}
-                {item.gameType === 'rune' && item.cardProperty && item.cardProperty !== '无' && (
+                {gameTypes.includes('rune') && item.cardProperty && item.cardProperty !== '无' && (
                   <div className="text-xs text-muted-foreground mt-1">属性: {item.cardProperty}</div>
                 )}
                 <div className="flex items-center justify-between mt-2 text-sm text-muted-foreground">
@@ -608,7 +493,7 @@ export function InventoryPage() {
                     >
                       <span className="text-lg leading-none">-</span>
                     </Button>
-                    <span className="w-8 text-center">x{item.userQuantity ?? item.quantity}</span>
+                    <span className="w-8 text-center">x{getDisplayQuantity(item)}</span>
                     <Button
                       variant="ghost"
                       size="icon"
@@ -624,27 +509,10 @@ export function InventoryPage() {
                   <span className="font-bold text-primary">{formatCurrency(item.userValue ?? item.value)}</span>
                 </div>
                 <div className="flex gap-2 mt-3">
-                  {isAdmin ? (
-                    <Button variant="outline" size="sm" className="flex-1" onClick={() => { setEditingItem(item); setFormOpen(true) }}>
-                      <Edit className="w-3 h-3 mr-1" />
-                      编辑
-                    </Button>
-                  ) : (
-                    <Button variant="outline" size="sm" className="flex-1" onClick={() => { setEditingItem(item); setUserEditOpen(true) }}>
-                      <Edit className="w-3 h-3 mr-1" />
-                      编辑
-                    </Button>
-                  )}
-                  {isAdmin && (
-                    <Button 
-                      variant="outline" 
-                      size="sm" 
-                      className="text-red-500 hover:text-red-600"
-                      onClick={() => deleteMutation.mutate(String(item.id))}
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </Button>
-                  )}
+                  <Button variant="outline" size="sm" className="flex-1" onClick={() => { setEditingItem(item); setUserEditOpen(true) }}>
+                    <Edit className="w-3 h-3 mr-1" />
+                    编辑
+                  </Button>
                 </div>
               </CardContent>
             </Card>
@@ -667,20 +535,25 @@ export function InventoryPage() {
               </thead>
               <tbody>
                 {filteredItems.map((item: InventoryItem) => {
-                  const gameType = GAME_TYPES.find(g => g.id === item.gameType)
+                  const gameTypes = getGameTypes(item.gameType);
+                  const displayGameTypes = gameTypes.map(type => GAME_TYPE_MAP[type]).filter(Boolean);
                   return (
                   <tr key={item.id} className="border-t hover:bg-muted/30 transition-colors">
                     <td className="p-4">
                       <div className="flex flex-col gap-1">
                         <span className="font-medium">{item.itemName || item.name}</span>
-                        {gameType && (
-                          <span className="text-xs text-muted-foreground">{gameType.name}</span>
+                        {displayGameTypes.length > 0 && (
+                          <div className="flex gap-1 flex-wrap">
+                            {displayGameTypes.map((game, idx) => (
+                              <span key={idx} className="text-xs text-muted-foreground">{game.name}</span>
+                            ))}
+                          </div>
                         )}
                       </div>
                     </td>
-                    <td className="p-4 text-center text-muted-foreground">{item.gameType === 'rune' ? item.runeCardInfo?.cardNumber || '-' : '-'}</td>
+                    <td className="p-4 text-center text-muted-foreground">{gameTypes.includes('rune') ? item.runeCardInfo?.cardNumber || '-' : '-'}</td>
                     <td className="p-4 text-center">{item.rarity ? <Badge variant="outline">{getRarityDisplay(item.rarity)}</Badge> : '-'}</td>
-                    <td className="p-4 text-center text-muted-foreground">{item.gameType === 'rune' ? (item.cardProperty && item.cardProperty !== '无' ? item.cardProperty : '-') : '-'}</td>
+                    <td className="p-4 text-center text-muted-foreground">{gameTypes.includes('rune') ? (item.cardProperty && item.cardProperty !== '无' ? item.cardProperty : '-') : '-'}</td>
                     <td className="p-4 text-center">
                       <div className="flex items-center justify-center gap-2">
                         <Button
@@ -692,7 +565,7 @@ export function InventoryPage() {
                         >
                           <span className="text-sm leading-none">-</span>
                         </Button>
-                        <span className="w-8 text-center">{item.userQuantity ?? item.quantity}</span>
+                        <span className="w-8 text-center">{getDisplayQuantity(item)}</span>
                         <Button
                           variant="ghost"
                           size="icon"
@@ -706,25 +579,9 @@ export function InventoryPage() {
                     </td>
                     <td className="p-4 text-center font-medium">{formatCurrency(item.userValue ?? item.value)}</td>
                     <td className="p-4 text-right">
-                      {isAdmin ? (
-                        <>
-                          <Button variant="ghost" size="sm" onClick={() => { setEditingItem(item); setFormOpen(true) }}>
-                            <Edit className="w-4 h-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="text-red-500"
-                            onClick={() => deleteMutation.mutate(String(item.id))}
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </Button>
-                        </>
-                      ) : (
-                        <Button variant="ghost" size="sm" onClick={() => { setEditingItem(item); setUserEditOpen(true) }}>
-                          <Edit className="w-4 h-4" />
-                        </Button>
-                      )}
+                      <Button variant="ghost" size="sm" onClick={() => { setEditingItem(item); setUserEditOpen(true) }}>
+                        <Edit className="w-4 h-4" />
+                      </Button>
                     </td>
                   </tr>
                   )
@@ -760,16 +617,47 @@ export function InventoryPage() {
         </div>
       )}
 
-      <InventoryFormDialog 
-        open={formOpen} 
-        onOpenChange={setFormOpen} 
-        item={editingItem} 
-      />
       <UserInventoryEditDialog
         open={userEditOpen && editingItem !== null}
         onClose={() => setUserEditOpen(false)}
         item={editingItem || ({ itemName: '', quantity: 0, value: 0 } as InventoryItem)}
       />
+
+      {/* 清空库存确认对话框 */}
+      <Dialog open={clearConfirmOpen} onOpenChange={setClearConfirmOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5 text-red-500" />
+              确认清空个人库存？
+            </DialogTitle>
+            <DialogDescription>
+              此操作将把你所有物品的数量设置为 0。此操作不可逆！
+            </DialogDescription>
+          </DialogHeader>
+          <div className="py-4">
+            <p className="text-sm text-muted-foreground">
+              库存模板数据不会受到影响，只有你个人的物品数量会被清空。
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setClearConfirmOpen(false)}
+              disabled={clearUserInventoryMutation.isPending}
+            >
+              取消
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => clearUserInventoryMutation.mutate()}
+              disabled={clearUserInventoryMutation.isPending}
+            >
+              {clearUserInventoryMutation.isPending ? '清空中...' : '确认清空'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

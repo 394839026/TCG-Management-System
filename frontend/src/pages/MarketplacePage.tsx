@@ -112,7 +112,7 @@ export function MarketplacePage() {
         toast.success('已添加收藏')
       }
     },
-    onError: (_, listingId) => {
+    onError: () => {
       toast.error('操作失败，请重试')
     },
   })

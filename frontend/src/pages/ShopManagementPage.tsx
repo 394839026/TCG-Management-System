@@ -11,24 +11,39 @@ import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { shopService, Shop } from '@/services/api'
+import { shopService, Shop, orderService, Order } from '@/services/api'
 import { inventoryService } from '@/services/inventory'
+import { authService, User } from '@/services/auth'
 import { toast } from 'sonner'
-import { Package, Search, Plus, Trash2, ArrowLeft, Boxes, Edit, Users, UserPlus, UserX, LayoutDashboard, MoveUpRight } from 'lucide-react'
+import { Package, Search, Plus, Trash2, ArrowLeft, Boxes, Edit, Users, UserPlus, UserX, LayoutDashboard, MoveUpRight, ShoppingCart, Clock, CheckCircle, XCircle, Eye, MessageCircle } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
 
 interface ShopInventoryItem {
   _id: string
-  itemName: string
-  itemCode?: string
-  itemType: string
-  rarity: string
+  template: {
+    _id: string
+    itemName: string
+    rarity: string
+    itemType: string
+    gameType?: string | string[]
+    images?: string[]
+    runeCardInfo?: {
+      version?: string
+      cardNumber?: string
+    }
+    cardProperty?: string
+    value?: number
+    description?: string
+  }
   quantity: number
   price: number
-  condition?: string
-  description?: string
-  gameType?: string
+  shop: string
   addedBy?: { _id: string; username: string }
+  source?: 'personal_inventory' | 'purchase' | 'trade' | 'other'
+  sourceNote?: string
+  isListed: boolean
+  createdAt: string
+  updatedAt: string
 }
 
 interface ShopEmployee {
@@ -40,22 +55,22 @@ interface ShopEmployee {
   }
   role: string
   hiredAt: string
-  addedBy: {
+  addedBy?: {
     _id: string
     username: string
+  }
+  permissions?: {
+    canManageInventory?: boolean
+    canRecordSales?: boolean
+    canViewReports?: boolean
+    canManageEmployees?: boolean
   }
 }
 
 interface ShelfItem {
   _id: string
-  inventoryItem: {
-    _id: string
-    itemName: string
-    itemCode?: string
-    price: number
-  }
+  inventoryItem: ShopInventoryItem
   quantity: number
-  position: string
   addedAt: string
 }
 
@@ -63,7 +78,6 @@ interface Shelf {
   _id: string
   name: string
   description: string
-  location: string
   capacity: number
   items: ShelfItem[]
   createdAt: string
@@ -85,14 +99,16 @@ export function ShopManagementPage() {
   const [editShelfDialogOpen, setEditShelfDialogOpen] = useState(false)
   const [addItemToShelfDialogOpen, setAddItemToShelfDialogOpen] = useState(false)
   const [editShelfItemDialogOpen, setEditShelfItemDialogOpen] = useState(false)
+  const [listItemDialogOpen, setListItemDialogOpen] = useState(false)
   const [selectedItem, setSelectedItem] = useState<ShopInventoryItem | null>(null)
   const [selectedShelf, setSelectedShelf] = useState<Shelf | null>(null)
   const [selectedShelfItem, setSelectedShelfItem] = useState<ShelfItem | null>(null)
-  const [editForm, setEditForm] = useState({ quantity: 0, price: 0, condition: '', description: '' })
-  const [shelfForm, setShelfForm] = useState({ name: '', description: '', location: '', capacity: 0 })
-  const [shelfItemForm, setShelfItemForm] = useState({ inventoryItemId: '', quantity: 1, position: '' })
-  const [editShelfForm, setEditShelfForm] = useState({ name: '', description: '', location: '', capacity: 0 })
-  const [editShelfItemForm, setEditShelfItemForm] = useState({ quantity: 1, position: '' })
+  const [editForm, setEditForm] = useState({ quantity: 0, price: 0 })
+  const [shelfForm, setShelfForm] = useState({ name: '', description: '', capacity: 0 })
+  const [shelfItemForm, setShelfItemForm] = useState({ inventoryItemId: '', quantity: 1 })
+  const [listItemForm, setListItemForm] = useState({ shelfId: '', quantity: 1 })
+  const [editShelfForm, setEditShelfForm] = useState({ name: '', description: '', capacity: 0 })
+  const [editShelfItemForm, setEditShelfItemForm] = useState({ quantity: 1 })
   const [employeeSearch, setEmployeeSearch] = useState('')
   const [newEmployeeEmail, setNewEmployeeEmail] = useState('')
   const [newEmployeeRole, setNewEmployeeRole] = useState('staff')
@@ -106,6 +122,48 @@ export function ShopManagementPage() {
     contactInfo: { phone: '', email: '', website: '', socialMedia: { wechat: '', qq: '' } },
     businessHours: { openTime: '', closeTime: '', workdays: [] }
   })
+  const [orderStatusFilter, setOrderStatusFilter] = useState<string>('all')
+  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const [orderDetailDialogOpen, setOrderDetailDialogOpen] = useState(false)
+  
+  // 计算物品已在所有货架上的总数量
+  const getTotalOnShelves = (inventoryItemId: string) => {
+    if (!shop) return 0
+    let total = 0
+    shop.shelves?.forEach(shelf => {
+      shelf.items?.forEach(item => {
+        if (item.inventoryItem?._id === inventoryItemId) {
+          total += item.quantity
+        }
+      })
+    })
+    return total
+  }
+
+  // 获取当前用户
+  const currentUser = authService.getCurrentUser()
+
+  // 检查当前用户是否有权限管理员工
+  const canManageEmployees = () => {
+    if (!currentUser || !shop) return false
+    // 检查是否是店主
+    if (shop.owner === currentUser._id) return true
+    // 检查是否是员工，且有员工管理权限
+    const currentEmployee = shop.employees?.find(
+      (emp) => emp.user === currentUser._id || (typeof emp.user === 'object' && emp.user._id === currentUser._id)
+    )
+    if (currentEmployee) {
+      // 检查角色或权限
+      if (currentEmployee.role === 'owner' || currentEmployee.role === 'operator') {
+        return true
+      }
+      if (currentEmployee.permissions?.canManageEmployees) {
+        return true
+      }
+    }
+    return false
+  }
+
   const queryClient = useQueryClient()
 
   const { data: shopData } = useQuery({
@@ -158,11 +216,23 @@ export function ShopManagementPage() {
     enabled: !!shopId
   })
 
+  const { data: ordersData, isLoading: ordersLoading } = useQuery({
+    queryKey: ['shopOrders', shopId, orderStatusFilter],
+    queryFn: async () => {
+      const result = await orderService.getShopOrders(shopId!, { 
+        status: orderStatusFilter !== 'all' ? orderStatusFilter : undefined 
+      })
+      return result
+    },
+    enabled: !!shopId
+  })
+
   const removeMutation = useMutation({
     mutationFn: (itemId: string) => shopService.removeFromInventory(shopId!, itemId),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shopInventory', shopId] })
-      toast.success('物品已从店铺库存移除')
+      queryClient.invalidateQueries({ queryKey: ['userInventory'] })
+      toast.success('物品已从店铺库存移除并还回个人库存')
     },
     onError: (error: any) => {
       toast.error(error?.response?.data?.message || '移除失败')
@@ -183,11 +253,24 @@ export function ShopManagementPage() {
     },
   })
 
+  const toggleListedMutation = useMutation({
+    mutationFn: ({ itemId, isListed }: { itemId: string; isListed: boolean }) => 
+      shopService.toggleListed(shopId!, itemId, isListed),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['shopInventory', shopId] })
+      toast.success(data?.message || '状态已更新')
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || '操作失败')
+    },
+  })
+
   const addMutation = useMutation({
     mutationFn: ({ inventoryItemId, quantity }: { inventoryItemId: string; quantity: number }) => 
       shopService.addToInventory(shopId!, inventoryItemId, quantity),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['shopInventory', shopId] })
+      queryClient.invalidateQueries({ queryKey: ['userInventory'] })
       toast.success('物品已添加到店铺库存')
       setAddDialogOpen(false)
     },
@@ -313,15 +396,68 @@ export function ShopManagementPage() {
     },
   })
 
+  const confirmOrderMutation = useMutation({
+    mutationFn: (orderId: string) => orderService.confirmOrder(shopId!, orderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shopOrders', shopId] })
+      queryClient.invalidateQueries({ queryKey: ['shopInventory', shopId] })
+      toast.success('订单已确认，库存已扣减')
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || '确认订单失败')
+    },
+  })
+
+  const completeOrderMutation = useMutation({
+    mutationFn: (orderId: string) => orderService.completeOrder(shopId!, orderId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shopOrders', shopId] })
+      toast.success('订单已完成')
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || '完成订单失败')
+    },
+  })
+
+  const cancelOrderMutation = useMutation({
+    mutationFn: ({ orderId, reason }: { orderId: string; reason?: string }) =>
+      orderService.cancelOrder(orderId, reason),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['shopOrders', shopId] })
+      toast.success('订单已取消')
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || '取消订单失败')
+    },
+  })
+
+  const handleContactCustomer = (order: Order) => {
+    // 获取订单用户信息
+    const user = typeof order.user === 'object' ? order.user : null
+    if (user && user._id) {
+      navigate(`/messages?friendId=${user._id}`)
+    } else {
+      toast.error('无法联系顾客')
+    }
+  }
+
   const shop: Shop = shopData?.data || {} as Shop
   const inventory: ShopInventoryItem[] = inventoryData?.data || []
   const employees: ShopEmployee[] = employeesData?.data || []
   const shelves: Shelf[] = shelvesData?.data || []
   const userInventory = userInventoryData?.data || []
+  const orders: Order[] = ordersData?.data || []
+
+  const STATUS_MAP: Record<string, { label: string; color: string }> = {
+    pending: { label: '待确认', color: 'bg-yellow-100 text-yellow-800' },
+    confirmed: { label: '已确认', color: 'bg-blue-100 text-blue-800' },
+    completed: { label: '已完成', color: 'bg-green-100 text-green-800' },
+    cancelled: { label: '已取消', color: 'bg-red-100 text-red-800' },
+  }
 
   const filteredInventory = inventory.filter(item => 
-    item.itemName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    item.itemCode?.toLowerCase().includes(searchTerm.toLowerCase())
+    item.template?.itemName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    item.template?.runeCardInfo?.cardNumber?.toLowerCase().includes(searchTerm.toLowerCase())
   )
 
   const filteredEmployees = employees.filter(emp => 
@@ -355,9 +491,7 @@ export function ShopManagementPage() {
     setSelectedItem(item)
     setEditForm({
       quantity: item.quantity,
-      price: item.price,
-      condition: item.condition || '',
-      description: item.description || ''
+      price: item.price
     })
     setEditDialogOpen(true)
   }
@@ -434,9 +568,13 @@ export function ShopManagementPage() {
             库存管理
           </TabsTrigger>
           <TabsTrigger value="shelves">
-                      <LayoutDashboard className="w-4 h-4 mr-2" />
-                      货架管理
-                    </TabsTrigger>
+            <LayoutDashboard className="w-4 h-4 mr-2" />
+            货架管理
+          </TabsTrigger>
+          <TabsTrigger value="orders">
+            <ShoppingCart className="w-4 h-4 mr-2" />
+            订单管理
+          </TabsTrigger>
           <TabsTrigger value="employees">
             <Users className="w-4 h-4 mr-2" />
             员工管理
@@ -515,7 +653,7 @@ export function ShopManagementPage() {
           ) : (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               {filteredInventory.map((item) => (
-                <Card key={item._id} className="overflow-hidden">
+                <Card key={item._id} className={`overflow-hidden ${!item.isListed ? 'opacity-60 bg-gray-50' : ''}`}>
                   <CardHeader className="pb-2">
                     <div className="flex items-start justify-between">
                       <div className="flex items-start gap-3">
@@ -523,17 +661,30 @@ export function ShopManagementPage() {
                           <Package className="w-6 h-6 text-primary" />
                         </div>
                         <div>
-                          <CardTitle className="text-lg">{item.itemName}</CardTitle>
-                          {item.itemCode && (
-                            <p className="text-sm text-muted-foreground">编号: {item.itemCode}</p>
+                          <CardTitle className="text-lg flex items-center gap-2">
+                            {item.template?.itemName}
+                            {!item.isListed && (
+                              <Badge variant="outline" className="text-gray-500 bg-gray-100">
+                                已下架
+                              </Badge>
+                            )}
+                          </CardTitle>
+                          {item.template?.runeCardInfo?.cardNumber && (
+                            <p className="text-sm text-muted-foreground">编号: {item.template.runeCardInfo.cardNumber}</p>
                           )}
                         </div>
                       </div>
-                      <Badge className={getRarityColor(item.rarity)}>{item.rarity}</Badge>
+                      <Badge className={getRarityColor(item.template?.rarity)}>{item.template?.rarity}</Badge>
                     </div>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
+                      {item.addedBy?.username && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-muted-foreground">来源</span>
+                          <span className="text-sm">来源于 {item.addedBy.username}</span>
+                        </div>
+                      )}
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-muted-foreground">数量</span>
                         <span className="font-bold">{item.quantity}</span>
@@ -546,15 +697,6 @@ export function ShopManagementPage() {
                         <span className="text-sm text-muted-foreground">总价</span>
                         <span className="font-bold text-primary">{formatCurrency(item.price * item.quantity)}</span>
                       </div>
-                      {item.condition && (
-                        <div className="flex items-center justify-between">
-                          <span className="text-sm text-muted-foreground">品相</span>
-                          <Badge variant="outline">{item.condition}</Badge>
-                        </div>
-                      )}
-                      {item.description && (
-                        <p className="text-sm text-muted-foreground line-clamp-2">{item.description}</p>
-                      )}
                       <div className="flex gap-2 pt-2">
                         <Button
                           variant="outline"
@@ -564,6 +706,25 @@ export function ShopManagementPage() {
                         >
                           <Edit className="w-4 h-4 mr-2" />
                           编辑
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className={item.isListed 
+                            ? 'text-orange-500 hover:text-orange-600 hover:bg-orange-500/10' 
+                            : 'text-green-500 hover:text-green-600 hover:bg-green-500/10'}
+                          onClick={() => {
+                            if (item.isListed) {
+                              toggleListedMutation.mutate({ itemId: item._id, isListed: false })
+                            } else {
+                              setSelectedItem(item)
+                              setListItemForm({ shelfId: '', quantity: 1, position: '' })
+                              setListItemDialogOpen(true)
+                            }
+                          }}
+                          disabled={toggleListedMutation.isPending}
+                        >
+                          {item.isListed ? '下架' : '上架'}
                         </Button>
                         <Button
                           variant="outline"
@@ -623,10 +784,12 @@ export function ShopManagementPage() {
                 </div>
               </CardContent>
             </Card>
-            <Button onClick={() => setAddEmployeeDialogOpen(true)}>
-              <UserPlus className="w-4 h-4 mr-2" />
-              添加员工
-            </Button>
+            {canManageEmployees() && (
+              <Button onClick={() => setAddEmployeeDialogOpen(true)}>
+                <UserPlus className="w-4 h-4 mr-2" />
+                添加员工
+              </Button>
+            )}
           </div>
 
           {/* 员工列表 */}
@@ -659,26 +822,31 @@ export function ShopManagementPage() {
                           <p className="font-medium">{employee.user.username}</p>
                           <p className="text-sm text-muted-foreground">{employee.user.email}</p>
                           <div className="flex items-center gap-2 mt-1">
-                            <Badge variant="outline">{employee.role === 'owner' ? '经营者' : '店员'}</Badge>
+                            <Badge variant="outline">
+                              {employee.role === 'owner' || employee.role === 'operator' ? '经营者' : '店员'}
+                            </Badge>
                             <span className="text-xs text-muted-foreground">
                               加入于 {new Date(employee.hiredAt).toLocaleDateString('zh-CN')}
                             </span>
                           </div>
                         </div>
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
-                        onClick={() => {
-                          if (window.confirm('确定要移除这个员工吗？')) {
-                            removeEmployeeMutation.mutate(employee._id)
-                          }
-                        }}
-                      >
-                        <UserX className="w-4 h-4 mr-2" />
-                        移除
-                      </Button>
+                      {canManageEmployees() && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-red-500 hover:text-red-600 hover:bg-red-500/10"
+                          disabled={employee.role === 'owner' && (typeof employee.user === 'string' ? employee.user === shop.owner : employee.user._id === shop.owner)}
+                          onClick={() => {
+                            if (window.confirm('确定要移除这个员工吗？')) {
+                              removeEmployeeMutation.mutate(employee._id)
+                            }
+                          }}
+                        >
+                          <UserX className="w-4 h-4 mr-2" />
+                          移除
+                        </Button>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -757,9 +925,6 @@ export function ShopManagementPage() {
                         </div>
                         <div>
                           <CardTitle className="text-lg">{shelf.name}</CardTitle>
-                          {shelf.location && (
-                            <p className="text-sm text-muted-foreground">位置: {shelf.location}</p>
-                          )}
                           {shelf.description && (
                             <p className="text-sm text-muted-foreground">{shelf.description}</p>
                           )}
@@ -778,7 +943,6 @@ export function ShopManagementPage() {
                             setEditShelfForm({
                               name: shelf.name,
                               description: shelf.description,
-                              location: shelf.location,
                               capacity: shelf.capacity
                             })
                             setEditShelfDialogOpen(true)
@@ -813,7 +977,7 @@ export function ShopManagementPage() {
                           size="sm"
                           onClick={() => {
                             setSelectedShelf(shelf)
-                            setShelfItemForm({ inventoryItemId: '', quantity: 1, position: '' })
+                            setShelfItemForm({ inventoryItemId: '', quantity: 1 })
                             setAddItemToShelfDialogOpen(true)
                           }}
                         >
@@ -837,15 +1001,14 @@ export function ShopManagementPage() {
                                       <Package className="w-5 h-5 text-primary" />
                                     </div>
                                     <div>
-                                      <p className="font-medium">{item.inventoryItem.itemName}</p>
+                                      <p className="font-medium">{item.inventoryItem?.template?.itemName}</p>
                                       <div className="flex items-center gap-3 text-sm text-muted-foreground">
-                                        {item.inventoryItem.itemCode && (
-                                          <span>编号: {item.inventoryItem.itemCode}</span>
+                                        {item.inventoryItem?.template?.runeCardInfo?.cardNumber && (
+                                          <span>编号: {item.inventoryItem.template.runeCardInfo.cardNumber}</span>
                                         )}
                                         <span>数量: {item.quantity}</span>
-                                        {item.position && <span>位置: {item.position}</span>}
                                         <span className="text-primary font-medium">
-                                          {formatCurrency(item.inventoryItem.price)}
+                                          {formatCurrency(item.inventoryItem?.price)}
                                         </span>
                                       </div>
                                     </div>
@@ -858,8 +1021,7 @@ export function ShopManagementPage() {
                                         setSelectedShelf(shelf)
                                         setSelectedShelfItem(item)
                                         setEditShelfItemForm({
-                                          quantity: item.quantity,
-                                          position: item.position
+                                          quantity: item.quantity
                                         })
                                         setEditShelfItemDialogOpen(true)
                                       }}
@@ -894,6 +1056,152 @@ export function ShopManagementPage() {
                   </CardContent>
                 </Card>
               ))}
+            </div>
+          )}
+        </TabsContent>
+
+        {/* 订单管理标签页 */}
+        <TabsContent value="orders" className="space-y-6">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-semibold">店铺订单</h3>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">状态:</span>
+              <div className="flex gap-1">
+                {['all', 'pending', 'confirmed', 'completed', 'cancelled'].map(status => (
+                  <Button
+                    key={status}
+                    variant={orderStatusFilter === status ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setOrderStatusFilter(status)}
+                  >
+                    {status === 'all' ? '全部' : STATUS_MAP[status]?.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {ordersLoading ? (
+            <div className="flex justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : orders.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <ShoppingCart className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">暂无订单</p>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {orders.map((order) => {
+                const statusInfo = STATUS_MAP[order.status]
+                return (
+                  <Card key={order._id}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                            <ShoppingCart className="w-5 h-5 text-primary" />
+                          </div>
+                          <div>
+                            <CardTitle className="text-lg">{order.orderNumber}</CardTitle>
+                            <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
+                              <span>
+                                {typeof order.user === 'object' ? order.user.username : '用户'}
+                              </span>
+                              <span>•</span>
+                              <span>{new Date(order.createdAt).toLocaleString()}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <Badge className={statusInfo?.color}>{statusInfo?.label}</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        {order.items.slice(0, 3).map((item, index) => (
+                          <div key={index} className="flex items-center justify-between text-sm">
+                            <div>
+                              <p className="font-medium">{item.itemName}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {formatCurrency(item.price)} × {item.quantity}
+                              </p>
+                            </div>
+                            <p className="font-medium">{formatCurrency(item.price * item.quantity)}</p>
+                          </div>
+                        ))}
+                        {order.items.length > 3 && (
+                          <p className="text-sm text-muted-foreground">
+                            还有 {order.items.length - 3} 件商品...
+                          </p>
+                        )}
+                        
+                        <div className="flex items-center justify-between pt-3 border-t">
+                          <div className="text-lg font-bold">
+                            总计: <span className="text-primary">{formatCurrency(order.totalAmount)}</span>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedOrder(order)
+                                setOrderDetailDialogOpen(true)
+                              }}
+                            >
+                              <Eye className="w-4 h-4 mr-1" />
+                              详情
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleContactCustomer(order)}
+                            >
+                              <MessageCircle className="w-4 h-4 mr-1" />
+                              联系顾客
+                            </Button>
+                            {order.status === 'pending' && (
+                              <>
+                                <Button
+                                  size="sm"
+                                  variant="destructive"
+                                  onClick={() => {
+                                    const reason = prompt('请输入取消原因（可选）：')
+                                    cancelOrderMutation.mutate({ orderId: order._id, reason: reason || undefined })
+                                  }}
+                                  disabled={cancelOrderMutation.isPending}
+                                >
+                                  <XCircle className="w-4 h-4 mr-1" />
+                                  取消
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  onClick={() => confirmOrderMutation.mutate(order._id)}
+                                  disabled={confirmOrderMutation.isPending}
+                                >
+                                  <CheckCircle className="w-4 h-4 mr-1" />
+                                  确认
+                                </Button>
+                              </>
+                            )}
+                            {order.status === 'confirmed' && (
+                              <Button
+                                size="sm"
+                                onClick={() => completeOrderMutation.mutate(order._id)}
+                                disabled={completeOrderMutation.isPending}
+                              >
+                                <CheckCircle className="w-4 h-4 mr-1" />
+                                完成
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )
+              })}
             </div>
           )}
         </TabsContent>
@@ -1018,17 +1326,20 @@ export function ShopManagementPage() {
           {selectedItem && (
             <div className="space-y-4 py-4">
               <div className="p-3 bg-muted rounded-lg">
-                <p className="font-medium">{selectedItem.itemName}</p>
-                {selectedItem.itemCode && (
-                  <p className="text-sm text-muted-foreground">编号: {selectedItem.itemCode}</p>
+                <p className="font-medium">{selectedItem.template?.itemName}</p>
+                {selectedItem.template?.runeCardInfo?.cardNumber && (
+                  <p className="text-sm text-muted-foreground">编号: {selectedItem.template.runeCardInfo.cardNumber}</p>
                 )}
+                <p className="text-xs text-muted-foreground mt-1">
+                  其他属性由库存模板管理，不可直接编辑
+                </p>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium">数量</label>
                   <Input
                     type="number"
-                    min="1"
+                    min="0"
                     value={editForm.quantity}
                     onChange={(e) => setEditForm({ ...editForm, quantity: parseInt(e.target.value) || 0 })}
                   />
@@ -1042,23 +1353,6 @@ export function ShopManagementPage() {
                     onChange={(e) => setEditForm({ ...editForm, price: parseFloat(e.target.value) || 0 })}
                   />
                 </div>
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">品相</label>
-                <Input
-                  value={editForm.condition}
-                  onChange={(e) => setEditForm({ ...editForm, condition: e.target.value })}
-                  placeholder="例如: mint, near_mint, excellent"
-                />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">描述</label>
-                <Textarea
-                  value={editForm.description}
-                  onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                  placeholder="物品描述"
-                  rows={3}
-                />
               </div>
             </div>
           )}
@@ -1097,14 +1391,14 @@ export function ShopManagementPage() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="staff">店员</SelectItem>
-                  <SelectItem value="owner">经营者</SelectItem>
+                  <SelectItem value="operator">经营者</SelectItem>
                 </SelectContent>
               </Select>
             </div>
             <div className="p-3 bg-muted rounded-lg">
               <p className="text-sm text-muted-foreground">
-                <strong>经营者</strong>：拥有全部权限<br />
-                <strong>店员</strong>：只能查看库存和处理销售
+                <strong>经营者</strong>：拥有店铺全部管理权限<br />
+                <strong>店员</strong>：只拥有上架下架的权限
               </p>
             </div>
           </div>
@@ -1132,14 +1426,6 @@ export function ShopManagementPage() {
                 placeholder="例如: 卡牌展示架A"
                 value={shelfForm.name}
                 onChange={(e) => setShelfForm({ ...shelfForm, name: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">位置</label>
-              <Input
-                placeholder="例如: 入口左侧"
-                value={shelfForm.location}
-                onChange={(e) => setShelfForm({ ...shelfForm, location: e.target.value })}
               />
             </div>
             <div className="space-y-2">
@@ -1191,13 +1477,6 @@ export function ShopManagementPage() {
               />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">位置</label>
-              <Input
-                value={editShelfForm.location}
-                onChange={(e) => setEditShelfForm({ ...editShelfForm, location: e.target.value })}
-              />
-            </div>
-            <div className="space-y-2">
               <label className="text-sm font-medium">容量</label>
               <Input
                 type="number"
@@ -1246,39 +1525,55 @@ export function ShopManagementPage() {
                 <label className="text-sm font-medium">选择物品 *</label>
                 <Select 
                   value={shelfItemForm.inventoryItemId} 
-                  onValueChange={(value) => setShelfItemForm({ ...shelfItemForm, inventoryItemId: value })}
+                  onValueChange={(value) => setShelfItemForm({ ...shelfItemForm, inventoryItemId: value, quantity: 1 })}
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="选择物品" />
                   </SelectTrigger>
                   <SelectContent>
-                    {inventory.map((item) => (
-                      <SelectItem key={item._id} value={item._id}>
-                        {item.itemName} - 库存: {item.quantity}
-                      </SelectItem>
-                    ))}
+                    {inventory.map((item) => {
+                      const totalOnShelves = getTotalOnShelves(item._id)
+                      const available = item.quantity - totalOnShelves
+                      return (
+                        <SelectItem key={item._id} value={item._id}>
+                          {item.template?.itemName} - 库存: {item.quantity} - 已上架: {totalOnShelves} - 可上架: {available}
+                        </SelectItem>
+                      )
+                    })}
                   </SelectContent>
                 </Select>
               </div>
-              <div className="grid grid-cols-2 gap-4">
+              {shelfItemForm.inventoryItemId && (
                 <div className="space-y-2">
                   <label className="text-sm font-medium">数量</label>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={shelfItemForm.quantity}
-                    onChange={(e) => setShelfItemForm({ ...shelfItemForm, quantity: parseInt(e.target.value) || 1 })}
-                  />
+                  {(() => {
+                    const selectedInventoryItem = inventory.find(i => i._id === shelfItemForm.inventoryItemId)
+                    if (!selectedInventoryItem) return null
+                    const totalOnShelves = getTotalOnShelves(shelfItemForm.inventoryItemId)
+                    const available = selectedInventoryItem.quantity - totalOnShelves
+                    return (
+                      <>
+                        <Input
+                          type="number"
+                          min="1"
+                          max={available}
+                          value={shelfItemForm.quantity}
+                          onChange={(e) => setShelfItemForm({ 
+                            ...shelfItemForm, 
+                            quantity: Math.min(
+                              Math.max(1, parseInt(e.target.value) || 1), 
+                              available
+                            )
+                          })}
+                        />
+                        {available <= 0 && (
+                          <p className="text-sm text-red-500">库存已全部上架</p>
+                        )}
+                      </>
+                    )
+                  })()}
                 </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">位置</label>
-                  <Input
-                    placeholder="例如: 第一层左边"
-                    value={shelfItemForm.position}
-                    onChange={(e) => setShelfItemForm({ ...shelfItemForm, position: e.target.value })}
-                  />
-                </div>
-              </div>
+              )}
             </div>
           </div>
           <DialogFooter>
@@ -1290,9 +1585,117 @@ export function ShopManagementPage() {
                 shelfId: selectedShelf!._id,
                 data: shelfItemForm
               })}
-              disabled={addItemToShelfMutation.isPending || !shelfItemForm.inventoryItemId}
+              disabled={(() => {
+                if (addItemToShelfMutation.isPending || !shelfItemForm.inventoryItemId) return true
+                const selectedInventoryItem = inventory.find(i => i._id === shelfItemForm.inventoryItemId)
+                if (!selectedInventoryItem) return true
+                const totalOnShelves = getTotalOnShelves(shelfItemForm.inventoryItemId)
+                const available = selectedInventoryItem.quantity - totalOnShelves
+                return available <= 0
+              })()}
             >
               {addItemToShelfMutation.isPending ? '添加中...' : '添加到货架'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 上架到货架对话框 */}
+      <Dialog open={listItemDialogOpen} onOpenChange={setListItemDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>上架商品到货架</DialogTitle>
+          </DialogHeader>
+          {selectedItem && (
+            <div className="space-y-4 py-4">
+              <div className="p-3 bg-muted rounded-lg">
+                <p className="font-medium">{selectedItem.template?.itemName}</p>
+                {selectedItem.template?.runeCardInfo?.cardNumber && (
+                  <p className="text-sm text-muted-foreground">编号: {selectedItem.template.runeCardInfo.cardNumber}</p>
+                )}
+                <p className="text-sm text-muted-foreground mt-1">库存数量: {selectedItem.quantity}</p>
+                <p className="text-sm text-muted-foreground">已上架: {getTotalOnShelves(selectedItem._id)}</p>
+                <p className="text-sm text-primary font-medium">
+                  可上架: {selectedItem.quantity - getTotalOnShelves(selectedItem._id)}
+                </p>
+              </div>
+              
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">选择货架 *</label>
+                  {shelves.length === 0 ? (
+                    <div className="p-3 border rounded-lg text-center text-muted-foreground">
+                      暂无可选货架，请先创建货架
+                    </div>
+                  ) : (
+                    <Select 
+                      value={listItemForm.shelfId} 
+                      onValueChange={(value) => setListItemForm({ ...listItemForm, shelfId: value })}
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder="选择货架" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {shelves.map((shelf) => (
+                          <SelectItem key={shelf._id} value={shelf._id}>
+                            {shelf.name} ({shelf.items.length}/{shelf.capacity || '∞'})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">数量</label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max={selectedItem.quantity - getTotalOnShelves(selectedItem._id)}
+                    value={listItemForm.quantity}
+                    onChange={(e) => setListItemForm({ 
+                      ...listItemForm, 
+                      quantity: Math.min(
+                        Math.max(1, parseInt(e.target.value) || 1), 
+                        selectedItem.quantity - getTotalOnShelves(selectedItem._id)
+                      )
+                    })}
+                  />
+                  {(selectedItem.quantity - getTotalOnShelves(selectedItem._id)) <= 0 && (
+                    <p className="text-sm text-red-500">库存已全部上架</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setListItemDialogOpen(false)}>
+              取消
+            </Button>
+            <Button 
+              onClick={() => {
+                if (selectedItem) {
+                  addItemToShelfMutation.mutate({
+                    shelfId: listItemForm.shelfId,
+                    data: {
+                      inventoryItemId: selectedItem._id,
+                      quantity: listItemForm.quantity
+                    }
+                  }, {
+                    onSuccess: () => {
+                      toggleListedMutation.mutate({ itemId: selectedItem._id, isListed: true })
+                      setListItemDialogOpen(false)
+                    }
+                  })
+                }
+              }}
+              disabled={
+                addItemToShelfMutation.isPending || 
+                !listItemForm.shelfId || 
+                shelves.length === 0 || 
+                (selectedItem && selectedItem.quantity - getTotalOnShelves(selectedItem._id) <= 0)
+              }
+            >
+              {addItemToShelfMutation.isPending ? '上架中...' : '上架'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1308,27 +1711,60 @@ export function ShopManagementPage() {
             {selectedShelfItem && (
               <div className="space-y-4">
                 <div className="p-3 bg-muted rounded-lg">
-                  <p className="font-medium">{selectedShelfItem.inventoryItem.itemName}</p>
-                  {selectedShelfItem.inventoryItem.itemCode && (
-                    <p className="text-sm text-muted-foreground">编号: {selectedShelfItem.inventoryItem.itemCode}</p>
+                  <p className="font-medium">{selectedShelfItem.inventoryItem?.template?.itemName}</p>
+                  {selectedShelfItem.inventoryItem?.template?.runeCardInfo?.cardNumber && (
+                    <p className="text-sm text-muted-foreground">编号: {selectedShelfItem.inventoryItem.template.runeCardInfo.cardNumber}</p>
+                  )}
+                  {selectedShelfItem.inventoryItem && (
+                    <>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        库存数量: {selectedShelfItem.inventoryItem.quantity}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        当前上架: {selectedShelfItem.quantity}
+                      </p>
+                      {(() => {
+                        const totalOnShelves = getTotalOnShelves(selectedShelfItem.inventoryItem._id)
+                        const available = selectedShelfItem.inventoryItem.quantity - totalOnShelves + selectedShelfItem.quantity
+                        return (
+                          <>
+                            <p className="text-sm text-muted-foreground">
+                              已上架其他货架: {totalOnShelves - selectedShelfItem.quantity}
+                            </p>
+                            <p className="text-sm text-primary font-medium">
+                              最大可设: {available}
+                            </p>
+                          </>
+                        )
+                      })()}
+                    </>
                   )}
                 </div>
                 <div className="space-y-2">
                   <label className="text-sm font-medium">数量</label>
-                  <Input
-                    type="number"
-                    min="1"
-                    value={editShelfItemForm.quantity}
-                    onChange={(e) => setEditShelfItemForm({ ...editShelfItemForm, quantity: parseInt(e.target.value) || 1 })}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <label className="text-sm font-medium">位置</label>
-                  <Input
-                    placeholder="例如: 第一层左边"
-                    value={editShelfItemForm.position}
-                    onChange={(e) => setEditShelfItemForm({ ...editShelfItemForm, position: e.target.value })}
-                  />
+                  {selectedShelfItem.inventoryItem && (
+                    <>
+                      <Input
+                        type="number"
+                        min="1"
+                        max={(() => {
+                          const totalOnShelves = getTotalOnShelves(selectedShelfItem.inventoryItem._id)
+                          return selectedShelfItem.inventoryItem.quantity - totalOnShelves + selectedShelfItem.quantity
+                        })()}
+                        value={editShelfItemForm.quantity}
+                        onChange={(e) => setEditShelfItemForm({ 
+                          ...editShelfItemForm, 
+                          quantity: Math.min(
+                            Math.max(1, parseInt(e.target.value) || 1), 
+                            (() => {
+                              const totalOnShelves = getTotalOnShelves(selectedShelfItem.inventoryItem!._id)
+                              return selectedShelfItem.inventoryItem!.quantity - totalOnShelves + selectedShelfItem.quantity
+                            })()
+                          )
+                        })}
+                      />
+                    </>
+                  )}
                 </div>
               </div>
             )}
@@ -1550,6 +1986,86 @@ export function ShopManagementPage() {
               disabled={updateShopMutation.isPending || !editShopForm.name.trim()}
             >
               {updateShopMutation.isPending ? '保存中...' : '保存'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 订单详情对话框 */}
+      <Dialog open={orderDetailDialogOpen} onOpenChange={setOrderDetailDialogOpen}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>订单详情</DialogTitle>
+          </DialogHeader>
+          {selectedOrder && (
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">订单号</p>
+                  <p className="font-medium">{selectedOrder.orderNumber}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">状态</p>
+                  <Badge className={STATUS_MAP[selectedOrder.status]?.color}>
+                    {STATUS_MAP[selectedOrder.status]?.label}
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">订购用户</p>
+                  <p className="font-medium">
+                    {typeof selectedOrder.user === 'object' ? selectedOrder.user.username : '用户'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">下单时间</p>
+                  <p className="font-medium">{new Date(selectedOrder.createdAt).toLocaleString()}</p>
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <h4 className="font-medium mb-3">商品列表</h4>
+                <div className="space-y-2">
+                  {selectedOrder.items.map((item, index) => (
+                    <div key={index} className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
+                      <div>
+                        <p className="font-medium">{item.itemName}</p>
+                        <p className="text-sm text-muted-foreground">
+                          单价: {formatCurrency(item.price)} × {item.quantity}件
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-medium">{formatCurrency(item.price * item.quantity)}</p>
+                        <p className="text-xs text-muted-foreground">单品总价</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between text-lg font-bold">
+                  <span>订单总计</span>
+                  <span className="text-primary">{formatCurrency(selectedOrder.totalAmount)}</span>
+                </div>
+              </div>
+
+              {selectedOrder.notes && (
+                <div className="border-t pt-4">
+                  <p className="text-sm text-muted-foreground">备注</p>
+                  <p className="mt-1">{selectedOrder.notes}</p>
+                </div>
+              )}
+            </div>
+          )}
+          <DialogFooter>
+            {selectedOrder && (
+              <Button variant="outline" onClick={() => handleContactCustomer(selectedOrder)}>
+                <MessageCircle className="w-4 h-4 mr-1" />
+                联系顾客
+              </Button>
+            )}
+            <Button variant="outline" onClick={() => setOrderDetailDialogOpen(false)}>
+              关闭
             </Button>
           </DialogFooter>
         </DialogContent>

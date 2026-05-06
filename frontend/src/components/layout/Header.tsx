@@ -1,7 +1,7 @@
-import { Bell, Moon, Sun, User, LogOut } from 'lucide-react'
+import { Bell, Moon, Sun, User, LogOut, Coins, Award } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '@/contexts/AuthContext'
 import { useNavigate } from 'react-router-dom'
@@ -19,16 +19,19 @@ export function Header({ title }: HeaderProps) {
   const { data: friendRequestsData } = useQuery({
     queryKey: ['friendRequests'],
     queryFn: () => friendService.getRequests(),
+    refetchInterval: 15000, // 每15秒刷新一次
   })
 
   const { data: unreadMessagesData } = useQuery({
     queryKey: ['unreadMessagesCount'],
     queryFn: () => messageService.getUnreadCount(),
+    refetchInterval: 15000, // 每15秒刷新一次
   })
 
   const { data: unreadNotificationsData } = useQuery({
     queryKey: ['unreadNotificationsCount'],
     queryFn: () => notificationService.getUnreadCount(),
+    refetchInterval: 15000, // 每15秒刷新一次
   })
 
   const friendRequestsCount = friendRequestsData?.data?.length || 0
@@ -57,12 +60,6 @@ export function Header({ title }: HeaderProps) {
     logout()
     navigate('/login')
   }
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-    }, 30000)
-    return () => clearInterval(timer)
-  }, [])
 
   return (
     <header className="sticky top-0 z-30 glass border-b border-border">
@@ -100,10 +97,23 @@ export function Header({ title }: HeaderProps) {
           </Button>
 
           <div className="flex items-center gap-2 pl-2 border-l">
-            <div className="text-right hidden sm:block">
+            <div className="text-right hidden sm:block mr-4">
               <p className="text-sm font-medium">{user?.username || '用户'}</p>
               <p className="text-xs text-muted-foreground">{user?.role || 'player'}</p>
             </div>
+            
+            {/* 星币和积分显示 */}
+            <div className="flex items-center gap-4 mr-4">
+              <div className="flex items-center gap-2">
+                <Award className="w-4 h-4 text-yellow-600" />
+                <span className="font-medium text-sm">{user?.points || 0} 积分</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Coins className="w-4 h-4 text-amber-600" />
+                <span className="font-medium text-sm">{user?.coins || 0} 星币</span>
+              </div>
+            </div>
+            
             <Button 
               variant="ghost" 
               size="icon" 

@@ -17,7 +17,14 @@ const abac = (options) => {
       return res.status(401).json({ message: '未授权,请先登录' });
     }
     
-    const resourceId = req.params.id || req.params.teamId || req.params.shopId || req.params.deckId;
+    const resourceId = req.params.id || req.params.teamId || req.params.shopId || req.params.deckId || req.params.inventoryId || req.params.shelfId;
+    
+    console.log('=== ABAC 调试 ===');
+    console.log('用户:', user.username, user._id);
+    console.log('资源类型:', options.resource);
+    console.log('操作:', options.actions);
+    console.log('路由参数:', req.params);
+    console.log('找到的资源ID:', resourceId);
     
     try {
       // 超级管理员拥有所有权限
@@ -117,7 +124,10 @@ async function checkShopPermission(user, shopId, actions) {
   }
   
   // 检查员工权限
-  const employee = shop.employees.find(e => e.user.toString() === user._id.toString());
+  const employee = shop.employees.find(e => {
+    const userId = typeof e.user === 'object' ? e.user._id.toString() : e.user.toString();
+    return userId === user._id.toString();
+  });
   if (!employee) return false;
   
   if (actions.includes('read')) {
@@ -125,17 +135,20 @@ async function checkShopPermission(user, shopId, actions) {
   }
   
   if (actions.includes('write')) {
-    return employee.role === 'manager' || 
+    return employee.role === 'owner' || 
+           employee.role === 'operator' || 
            employee.permissions.canManageInventory ||
            employee.permissions.canRecordSales;
   }
   
   if (actions.includes('delete')) {
-    return employee.role === 'manager';
+    return employee.role === 'owner' || employee.role === 'operator';
   }
   
   if (actions.includes('manage')) {
-    return employee.role === 'manager';
+    return employee.role === 'owner' || 
+           employee.role === 'operator' || 
+           employee.permissions.canManageEmployees;
   }
   
   return false;

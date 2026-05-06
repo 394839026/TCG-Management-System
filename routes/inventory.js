@@ -47,8 +47,16 @@ const imageUpload = multer({
 
 router.get('/', protect, async (req, res) => {
   try {
-    const { itemType, search, sort = 'createdAt', order = 'desc', page = 1, limit = 50, rarity, gameType, priceMin, priceMax, showZeroQuantity, version, cardProperty } = req.query;
-    const query = { userId: req.user._id };
+    const { itemType, search, sort = 'createdAt', order = 'desc', page = 1, limit = 50, rarity, gameType, priceMin, priceMax, showZeroQuantity, version, cardProperty, allTemplates } = req.query;
+    
+    // 如果请求获取所有模板（allTemplates=true），则查找 isTemplate 为 true 的
+    const query = {};
+    
+    if (allTemplates === 'true') {
+      query.isTemplate = true;
+    } else {
+      query.userId = req.user._id;
+    }
 
     if (itemType && itemType !== 'all') {
       // 支持多个类型用逗号分隔
@@ -187,15 +195,13 @@ router.get('/template', (req, res) => {
         '卡牌编号': '001',
         '版本': 'OGN',
         '卡牌属性': '',
-        '数量': 1,
-        '价格': 100,
         '描述': ''
       }
     ];
     const runeWs = xlsx.utils.json_to_sheet(runeTemplate);
     runeWs['!cols'] = [
       { wch: 15 }, { wch: 15 }, { wch: 10 },
-      { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 30 }
+      { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 30 }
     ];
     xlsx.utils.book_append_sheet(wb, runeWs, '符文战场');
 
@@ -204,15 +210,13 @@ router.get('/template', (req, res) => {
         '名称': '示例卡牌',
         '稀有度': 'common',
         '类型': '卡牌',
-        '数量': 1,
-        '价格': 100,
         '描述': ''
       }
     ];
     const digimonWs = xlsx.utils.json_to_sheet(digimonTemplate);
     digimonWs['!cols'] = [
       { wch: 15 }, { wch: 15 }, { wch: 10 },
-      { wch: 10 }, { wch: 10 }, { wch: 30 }
+      { wch: 30 }
     ];
     xlsx.utils.book_append_sheet(wb, digimonWs, '数码宝贝');
 
@@ -221,15 +225,13 @@ router.get('/template', (req, res) => {
         '名称': '示例卡牌',
         '稀有度': 'common',
         '类型': '卡牌',
-        '数量': 1,
-        '价格': 100,
         '描述': ''
       }
     ];
     const pokemonWs = xlsx.utils.json_to_sheet(pokemonTemplate);
     pokemonWs['!cols'] = [
       { wch: 15 }, { wch: 15 }, { wch: 10 },
-      { wch: 10 }, { wch: 10 }, { wch: 30 }
+      { wch: 30 }
     ];
     xlsx.utils.book_append_sheet(wb, pokemonWs, '宝可梦');
 
@@ -238,15 +240,13 @@ router.get('/template', (req, res) => {
         '名称': '示例卡牌',
         '稀有度': 'common',
         '类型': '卡牌',
-        '数量': 1,
-        '价格': 100,
         '描述': ''
       }
     ];
     const shadowverseEvolveWs = xlsx.utils.json_to_sheet(shadowverseEvolveTemplate);
     shadowverseEvolveWs['!cols'] = [
       { wch: 15 }, { wch: 15 }, { wch: 10 },
-      { wch: 10 }, { wch: 10 }, { wch: 30 }
+      { wch: 30 }
     ];
     xlsx.utils.book_append_sheet(wb, shadowverseEvolveWs, '影之诗进化对决');
 
@@ -267,10 +267,19 @@ router.delete('/clear-all',
   authorize('superadmin'),
   async (req, res) => {
     try {
-      const result = await InventoryItem.deleteMany({ userId: req.user._id });
+      const { allTemplates } = req.query;
+      let query;
+      
+      if (allTemplates === 'true') {
+        query = { isTemplate: true };
+      } else {
+        query = { userId: req.user._id };
+      }
+      
+      const result = await InventoryItem.deleteMany(query);
       res.json({
         success: true,
-        message: `已清空 ${result.deletedCount} 条卡牌数据`
+        message: `已清空 ${result.deletedCount} 条数据`
       });
     } catch (error) {
       console.error(error);
@@ -284,7 +293,16 @@ router.get('/export',
   authorize('superadmin'),
   async (req, res) => {
     try {
-      const items = await InventoryItem.find({ userId: req.user._id });
+      const { allTemplates } = req.query;
+      let query;
+      
+      if (allTemplates === 'true') {
+        query = { isTemplate: true };
+      } else {
+        query = { userId: req.user._id };
+      }
+      
+      const items = await InventoryItem.find(query);
 
       const rarityReverseMap = {
         'N': '普通',
@@ -329,8 +347,6 @@ router.get('/export',
         '卡牌编号': item.runeCardInfo?.cardNumber || '',
         '版本': versionReverseMap[item.runeCardInfo?.version] || item.runeCardInfo?.version || 'OGN',
         '卡牌属性': item.cardProperty || '',
-        '数量': item.quantity,
-        '价格': item.value,
         '描述': item.description || ''
       }));
 
@@ -338,8 +354,6 @@ router.get('/export',
         '名称': item.itemName,
         '稀有度': rarityReverseMap[item.rarity] || item.rarity,
         '类型': typeReverseMap[item.itemType] || item.itemType,
-        '数量': item.quantity,
-        '价格': item.value,
         '描述': item.description || ''
       }));
 
@@ -347,8 +361,6 @@ router.get('/export',
         '名称': item.itemName,
         '稀有度': rarityReverseMap[item.rarity] || item.rarity,
         '类型': typeReverseMap[item.itemType] || item.itemType,
-        '数量': item.quantity,
-        '价格': item.value,
         '描述': item.description || ''
       }));
 
@@ -356,8 +368,6 @@ router.get('/export',
         '名称': item.itemName,
         '稀有度': rarityReverseMap[item.rarity] || item.rarity,
         '类型': typeReverseMap[item.itemType] || item.itemType,
-        '数量': item.quantity,
-        '价格': item.value,
         '描述': item.description || ''
       }));
 
@@ -366,7 +376,7 @@ router.get('/export',
       if (runeData.length > 0) {
         const runeWs = xlsx.utils.json_to_sheet(runeData);
         runeWs['!cols'] = [
-          { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 30 }
+          { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 30 }
         ];
         xlsx.utils.book_append_sheet(wb, runeWs, '符文战场');
       }
@@ -374,7 +384,7 @@ router.get('/export',
       if (digimonData.length > 0) {
         const digimonWs = xlsx.utils.json_to_sheet(digimonData);
         digimonWs['!cols'] = [
-          { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 30 }
+          { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 30 }
         ];
         xlsx.utils.book_append_sheet(wb, digimonWs, '数码宝贝');
       }
@@ -382,7 +392,7 @@ router.get('/export',
       if (pokemonData.length > 0) {
         const pokemonWs = xlsx.utils.json_to_sheet(pokemonData);
         pokemonWs['!cols'] = [
-          { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 30 }
+          { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 30 }
         ];
         xlsx.utils.book_append_sheet(wb, pokemonWs, '宝可梦');
       }
@@ -390,7 +400,7 @@ router.get('/export',
       if (shadowverseEvolveData.length > 0) {
         const shadowverseEvolveWs = xlsx.utils.json_to_sheet(shadowverseEvolveData);
         shadowverseEvolveWs['!cols'] = [
-          { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 30 }
+          { wch: 15 }, { wch: 12 }, { wch: 10 }, { wch: 30 }
         ];
         xlsx.utils.book_append_sheet(wb, shadowverseEvolveWs, '影之诗进化对决');
       }
@@ -415,6 +425,7 @@ router.post('/import',
   async (req, res) => {
     console.log('[IMPORT] Starting import...');
     console.log('[IMPORT] User:', req.user?._id, 'Role:', req.user?.role);
+    console.log('[IMPORT] Query params:', req.query);
     try {
       if (!req.file) {
         console.log('[IMPORT] No file uploaded');
@@ -424,6 +435,10 @@ router.post('/import',
       console.log('[IMPORT] File received:', req.file.originalname);
       const workbook = xlsx.read(req.file.buffer, { type: 'buffer' });
       console.log('[IMPORT] Sheet names:', workbook.SheetNames);
+      
+      // 判断是否导入为全局模板
+      const { isGlobalTemplate } = req.query;
+      const isGlobal = isGlobalTemplate === 'true';
 
       const rarityMap = {
         '普通': 'N', 'N': 'N', 'normal': 'N', 'Normal': 'N',
@@ -538,7 +553,7 @@ router.post('/import',
             }
             
             const priceValue = row['价格'] || row['value'] || row[7] || 0;
-            const descValue = row['描述'] || row['description'] || row[8] || '';
+            const descValue = row['描述'] || row['description'] || row[6] || row[8] || '';
 
             // 调试信息 - 只在有需要时打印
             const isDebug = false;
@@ -598,7 +613,9 @@ router.post('/import',
             }
 
             const itemData = {
-              userId: req.user._id,
+              // 如果是全局模板，不设置 userId
+              ...(isGlobal ? {} : { userId: req.user._id }),
+              isTemplate: isGlobal,
               itemName: String(itemName).trim(),
               rarity: mappedRarity,
               itemType: typeMap[String(typeValue)] || 'card',
@@ -626,15 +643,17 @@ router.post('/import',
             }
 
             let duplicate = null;
+            const baseQuery = isGlobal ? { isTemplate: true } : { userId: req.user._id };
+            
             if (gameType === 'rune' && itemData.runeCardInfo?.cardNumber) {
               duplicate = await InventoryItem.findOne({
-                userId: req.user._id,
+                ...baseQuery,
                 itemName: itemData.itemName,
                 'runeCardInfo.cardNumber': itemData.runeCardInfo.cardNumber
               });
             } else {
               duplicate = await InventoryItem.findOne({
-                userId: req.user._id,
+                ...baseQuery,
                 itemName: itemData.itemName
               });
             }
@@ -716,7 +735,9 @@ router.get('/:id', protect, async (req, res) => {
       return res.status(404).json({ message: '物品不存在' });
     }
 
+    // 只有当物品有 userId 且不是当前用户时才拒绝访问
     if (
+      item.userId &&
       item.userId.toString() !== req.user._id.toString() &&
       req.user.role === 'user'
     ) {
@@ -740,7 +761,7 @@ router.post('/',
   protect,
   [
     body('itemName').trim().notEmpty().withMessage('物品名称是必填项'),
-    body('quantity').isInt({ min: 0 }).withMessage('数量必须是非负整数'),
+    body('quantity').optional().isInt({ min: 0 }).withMessage('数量必须是非负整数'),
     body('itemType').optional().notEmpty().withMessage('物品类型不能为空'),
     body('value').optional().isFloat({ min: 0 }).withMessage('价值不能为负数')
   ],
@@ -751,14 +772,16 @@ router.post('/',
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { itemName, gameType, itemType, quantity, value, description, tags, rarity, runeCardInfo, cardProperty } = req.body;
-
+      const { itemName, gameType, itemType, quantity, value, description, tags, rarity, runeCardInfo, cardProperty, isGlobalTemplate } = req.body;
+      
       const newItem = await InventoryItem.create({
-        userId: req.user._id,
+        // 如果是全局模板，不设置 userId
+        ...(isGlobalTemplate ? {} : { userId: req.user._id }),
+        isTemplate: isGlobalTemplate || false,
         itemName,
         gameType,
         itemType: itemType || 'card',
-        quantity,
+        quantity: quantity ?? 1,
         value: value || 0,
         description,
         tags: tags || [],
@@ -798,7 +821,7 @@ router.put('/:id',
         return res.status(404).json({ message: '物品不存在' });
       }
 
-      const isOwner = item.userId.toString() === req.user._id.toString();
+      const isOwner = !item.userId || item.userId.toString() === req.user._id.toString();
       const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
 
       if (!isOwner && !isAdmin) {
@@ -864,7 +887,7 @@ router.delete('/:id', protect, async (req, res) => {
       return res.status(404).json({ message: '物品不存在' });
     }
 
-    const isOwner = item.userId.toString() === req.user._id.toString();
+    const isOwner = !item.userId || item.userId.toString() === req.user._id.toString();
     const isAdmin = req.user.role === 'admin' || req.user.role === 'superadmin';
 
     if (!isOwner && !isAdmin) {
@@ -878,11 +901,11 @@ router.delete('/:id', protect, async (req, res) => {
       message: '物品已删除'
     });
   } catch (error) {
-    console.error(error);
-    if (error.kind === 'ObjectId') {
-      return res.status(404).json({ message: '物品不存在' });
-    }
-    res.status(500).json({ message: '服务器错误' });
+      console.error(error);
+      if (error.kind === 'ObjectId') {
+        return res.status(404).json({ message: '物品不存在' });
+      }
+      res.status(500).json({ message: '服务器错误' });
   }
 });
 

@@ -4,7 +4,8 @@ const tradeListingSchema = new mongoose.Schema({
   orderNumber: {
     type: String,
     unique: true,
-    required: true
+    required: false,
+    sparse: true
   },
   seller: { 
     type: mongoose.Schema.Types.ObjectId, 
@@ -19,7 +20,9 @@ const tradeListingSchema = new mongoose.Schema({
   items: [{
     item: { 
       type: mongoose.Schema.Types.ObjectId, 
-      ref: 'InventoryItem'
+      ref: 'Inventory',
+      required: false,
+      default: null
     },
     itemName: { 
       type: String, 
@@ -39,7 +42,6 @@ const tradeListingSchema = new mongoose.Schema({
   requestedItems: [{
     itemName: { 
       type: String, 
-      required: [true, '物品名称是必填项'],
       trim: true
     },
     rarity: { 
@@ -90,7 +92,7 @@ tradeListingSchema.index({ seller: 1, status: 1 });
 tradeListingSchema.index({ type: 1, status: 1 });
 tradeListingSchema.index({ createdAt: -1 });
 
-// 生成订单号函数
+// 生成订单号函数 - 改进版本
 function generateOrderNumber() {
   const date = new Date();
   const year = date.getFullYear();
@@ -99,8 +101,9 @@ function generateOrderNumber() {
   const hours = String(date.getHours()).padStart(2, '0');
   const minutes = String(date.getMinutes()).padStart(2, '0');
   const seconds = String(date.getSeconds()).padStart(2, '0');
+  const ms = String(date.getMilliseconds()).padStart(3, '0');
   const random = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
-  return `ORD${year}${month}${day}${hours}${minutes}${seconds}${random}`;
+  return `ORD${year}${month}${day}${hours}${minutes}${seconds}${ms}${random}`;
 }
 
 // 更新时间戳和生成订单号

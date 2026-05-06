@@ -13,6 +13,11 @@ const deckSchema = new mongoose.Schema({
     enum: ['rune', 'digimon', 'pokemon', 'shadowverse-evolve'],
     required: [true, '游戏类型是必填项']
   },
+  type: {
+    type: String,
+    enum: ['building', 'deck'],
+    default: 'deck'
+  },
   format: { 
     type: String, 
     default: '',
@@ -25,79 +30,65 @@ const deckSchema = new mongoose.Schema({
   },
   legend: [{
     card: { 
-      type: mongoose.Schema.Types.Mixed, 
-      required: true
+      type: mongoose.Schema.Types.Mixed
     },
     quantity: { 
       type: Number, 
-      required: [true, '数量是必填项'],
       min: [1, '数量至少为1']
     }
   }],
   mainDeck: [{
     card: { 
-      type: mongoose.Schema.Types.Mixed, 
-      required: true
+      type: mongoose.Schema.Types.Mixed
     },
     quantity: { 
       type: Number, 
-      required: [true, '数量是必填项'],
       min: [1, '数量至少为1']
     }
   }],
   sideDeck: [{
     card: { 
-      type: mongoose.Schema.Types.Mixed, 
-      required: true
+      type: mongoose.Schema.Types.Mixed
     },
     quantity: { 
       type: Number, 
-      required: [true, '数量是必填项'],
       min: [1, '数量至少为1']
     }
   }],
   battlefield: [{
     card: { 
-      type: mongoose.Schema.Types.Mixed, 
-      required: true
+      type: mongoose.Schema.Types.Mixed
     },
     quantity: { 
       type: Number, 
-      required: [true, '数量是必填项'],
       min: [1, '数量至少为1']
     }
   }],
   runes: [{
     card: { 
-      type: mongoose.Schema.Types.Mixed, 
-      required: true
+      type: mongoose.Schema.Types.Mixed
     },
     quantity: { 
       type: Number, 
-      required: [true, '数量是必填项'],
       min: [1, '数量至少为1']
     }
   }],
   tokens: [{
     card: { 
-      type: mongoose.Schema.Types.Mixed, 
-      required: true
+      type: mongoose.Schema.Types.Mixed
     },
     quantity: { 
       type: Number, 
-      required: [true, '数量是必填项'],
       min: [1, '数量至少为1']
     }
   }],
   // 兼容旧数据
   cards: [{
     card: { 
-      type: mongoose.Schema.Types.Mixed, 
-      required: true
+      type: mongoose.Schema.Types.Mixed
     },
     quantity: { 
       type: Number, 
-      required: [true, '数量是必填项'],
       min: [1, '数量至少为1']
     },
     sideboard: { 

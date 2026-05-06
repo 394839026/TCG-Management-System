@@ -5,6 +5,7 @@ const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
 const Notification = require('../models/Notification');
 const { protect, authorize } = require('../middleware/auth');
+const { filterSensitiveFields, USER_PROFILE_ALLOWED, USER_SETTINGS_ALLOWED } = require('../utils/security');
 
 // 生成JWT令牌
 const generateToken = (id) => {
@@ -72,7 +73,7 @@ router.post('/register', [
       user._id,
       'welcome',
       '🎉 欢迎加入！',
-      `亲爱的 ${user.username}，欢迎来到卡牌综合管理系统！开始探索你的卡牌收藏之旅吧！`,
+      `亲爱的 ${user.username}，欢迎来到星沉智库！开始探索你的卡牌收藏之旅吧！`,
       { username: user.username }
     );
 
@@ -199,14 +200,12 @@ router.put('/profile',
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { username, email, bio, avatar } = req.body;
       const user = await User.findById(req.user._id);
-
-      if (username) user.username = username;
-      if (email) user.email = email;
-      if (bio !== undefined) user.bio = bio;
-      if (avatar !== undefined) user.avatar = avatar;
-
+      
+      // 只允许更新白名单中的字段
+      const allowedData = filterSensitiveFields(req.body, USER_PROFILE_ALLOWED);
+      
+      Object.assign(user, allowedData);
       await user.save();
 
       res.json({
@@ -238,13 +237,12 @@ router.put('/profile',
 // @access  Private
 router.put('/settings', protect, async (req, res) => {
   try {
-    const { theme, primaryColor, cardView } = req.body;
     const user = await User.findById(req.user._id);
 
-    if (theme) user.settings.theme = theme;
-    if (primaryColor) user.settings.primaryColor = primaryColor;
-    if (cardView) user.settings.cardView = cardView;
-
+    // 只允许更新白名单中的设置字段
+    const allowedSettings = filterSensitiveFields(req.body, USER_SETTINGS_ALLOWED);
+    
+    Object.assign(user.settings, allowedSettings);
     await user.save();
 
     res.json({
@@ -363,11 +361,11 @@ router.post('/admin/register',
 );
 
 // @route   PUT /api/auth/users/:id/role
-// @desc    修改用户角色（仅超级管理员）
-// @access  Private (Superadmin only)
+// @desc    修改用户角色（管理员和超级管理员）
+// @access  Private (Admin & Superadmin)
 router.put('/users/:id/role',
   protect,
-  authorize('superadmin'),
+  authorize('admin', 'superadmin'),
   [
     body('role')
       .isIn(['user', 'admin', 'superadmin'])
@@ -393,6 +391,16 @@ router.put('/users/:id/role',
       // 防止修改自己的角色（避免把自己降级）
       if (user._id.toString() === req.user._id.toString()) {
         return res.status(400).json({ message: '不能修改自己的角色' });
+      }
+
+      // 只有超级管理员可以创建/修改为超级管理员
+      if (role === 'superadmin' && req.user.role !== 'superadmin') {
+        return res.status(403).json({ message: '只有超级管理员可以设置超级管理员角色' });
+      }
+
+      // 只有超级管理员可以修改超级管理员的角色
+      if (user.role === 'superadmin' && req.user.role !== 'superadmin') {
+        return res.status(403).json({ message: '只有超级管理员可以修改超级管理员的角色' });
       }
 
       // 更新角色
@@ -430,6 +438,66 @@ router.get('/users',
         success: true,
         count: users.length,
         data: users
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: '服务器错误' });
+    }
+  }
+);
+
+// @route   PUT /api/auth/users/:id/username
+// @desc    修改用户用户名（仅超级管理员）
+// @access  Private (Superadmin only)
+router.put('/users/:id/username',
+  protect,
+  authorize('superadmin'),
+  [
+    body('username')
+      .trim()
+      .isLength({ min: 3, max: 20 })
+      .withMessage('用户名长度必须在3-20个字符之间')
+  ],
+  async (req, res) => {
+    try {
+      // 验证输入
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { username } = req.body;
+      const userId = req.params.id;
+
+      // 查找用户
+      const user = await User.findById(userId);
+      if (!user) {
+        return res.status(404).json({ message: '用户不存在' });
+      }
+
+      // 检查用户名是否已被其他用户使用
+      const existingUser = await User.findOne({ 
+        username, 
+        _id: { $ne: userId } 
+      });
+      
+      if (existingUser) {
+        return res.status(400).json({ message: '该用户名已被使用' });
+      }
+
+      // 更新用户名
+      const oldUsername = user.username;
+      user.username = username;
+      await user.save();
+
+      res.json({
+        success: true,
+        message: '用户名更新成功',
+        data: {
+          _id: user._id,
+          username: user.username,
+          oldUsername: oldUsername
+        }
       });
     } catch (error) {
       console.error(error);

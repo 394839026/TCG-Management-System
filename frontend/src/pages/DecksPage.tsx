@@ -12,8 +12,6 @@ import { DeckFormDialog } from '@/components/decks/DeckFormDialog'
 
 const GAME_TYPES: Record<string, string> = {
   'rune': '符文战场',
-  'digimon': '数码宝贝',
-  'pokemon': '宝可梦',
 }
 
 const FORMAT_TYPES: Record<string, string> = {

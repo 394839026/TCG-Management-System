@@ -59,7 +59,23 @@ apiClient.interceptors.response.use(
       localStorage.removeItem('user');
       window.location.href = '/login';
     }
-    return Promise.reject(error);
+    
+    // 创建一个更友好的错误对象
+    const errorMessage = 
+      error.response?.data?.message || 
+      error.response?.statusText || 
+      error.message || 
+      '请求失败';
+    
+    const customError = new Error(errorMessage);
+    customError.name = error.name;
+    customError.stack = error.stack;
+    
+    // 将原始响应添加到错误对象中供调试使用
+    (customError as any).response = error.response;
+    (customError as any).originalError = error;
+    
+    return Promise.reject(customError);
   }
 );
 

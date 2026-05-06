@@ -283,6 +283,11 @@ const teamSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  // 关联的战队群聊
+  groupChat: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'GroupChat'
+  },
   createdAt: { 
     type: Date, 
     default: Date.now 

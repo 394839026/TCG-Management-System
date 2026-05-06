@@ -31,6 +31,18 @@ const userInventorySchema = new mongoose.Schema({
     trim: true,
     maxlength: [500, '备注不能超过500个字符']
   },
+  acquisitionSource: {
+    type: String,
+    trim: true,
+    maxlength: [100, '获取来源不能超过100个字符']
+  },
+  acquisitionPrice: {
+    type: Number,
+    min: [0, '获取价格不能为负数']
+  },
+  acquisitionDate: {
+    type: Date
+  },
   createdAt: {
     type: Date,
     default: Date.now

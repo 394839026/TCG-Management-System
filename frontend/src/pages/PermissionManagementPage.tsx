@@ -9,7 +9,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Badge } from '@/components/ui/badge'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Search, Edit, Trash2, Eye, RefreshCw, Shield, User as UserIcon, Mail, AlertCircle, CheckCircle, Settings, Lock, Unlock } from 'lucide-react'
+import { Label } from '@/components/ui/label'
+import { Search, Edit, Trash2, Eye, RefreshCw, Shield, User as UserIcon, Mail, AlertCircle, CheckCircle, Settings, Lock, Unlock, UserCog } from 'lucide-react'
 
 interface RoleOption {
   value: string
@@ -62,7 +63,9 @@ export function PermissionManagementPage() {
   const [roleDialogOpen, setRoleDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [permissionsDialogOpen, setPermissionsDialogOpen] = useState(false)
+  const [usernameDialogOpen, setUsernameDialogOpen] = useState(false)
   const [newRole, setNewRole] = useState('')
+  const [newUsername, setNewUsername] = useState('')
   const [editingPermissions, setEditingPermissions] = useState<Permissions | null>(null)
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState<'success' | 'error'>('success')
@@ -125,6 +128,36 @@ export function PermissionManagementPage() {
       favorites: true,
     })
     setPermissionsDialogOpen(true)
+  }
+
+  const handleOpenUsernameChange = (user: UserDetail) => {
+    setSelectedUser(user)
+    setNewUsername(user.username)
+    setUsernameDialogOpen(true)
+  }
+
+  const handleUsernameChange = async () => {
+    if (!selectedUser || !newUsername) return
+    
+    try {
+      const response = await apiClient.put(`/auth/users/${selectedUser._id}/username`, { 
+        username: newUsername 
+      })
+      
+      if (response.data.success) {
+        setUsers(users.map(u => 
+          u._id === selectedUser._id ? { ...u, username: newUsername } : u
+        ))
+        setSelectedUser({ ...selectedUser, username: newUsername })
+        setMessage('用户名更新成功')
+        setMessageType('success')
+        setUsernameDialogOpen(false)
+      }
+    } catch (error: any) {
+      console.error('Failed to update username:', error)
+      setMessage(error.response?.data?.message || '更新用户名失败')
+      setMessageType('error')
+    }
   }
 
   const handleRoleChange = async () => {
@@ -407,6 +440,17 @@ export function PermissionManagementPage() {
                           >
                             <Eye className="w-4 h-4" />
                           </Button>
+                          {user?.role === 'superadmin' && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => handleOpenUsernameChange(userItem)}
+                              disabled={isCurrentUser}
+                              className={isCurrentUser ? 'text-gray-300' : 'text-indigo-600 hover:text-indigo-700'}
+                            >
+                              <UserCog className="w-4 h-4" />
+                            </Button>
+                          )}
                           <Button
                             variant="ghost"
                             size="sm"
@@ -463,7 +507,9 @@ export function PermissionManagementPage() {
                     <SelectValue placeholder="选择角色" />
                   </SelectTrigger>
                   <SelectContent>
-                    {roleOptions.map((option) => (
+                    {roleOptions
+                      .filter(option => user?.role === 'superadmin' || option.value !== 'superadmin')
+                      .map((option) => (
                       <SelectItem key={option.value} value={option.value}>
                         {option.label}
                       </SelectItem>
@@ -591,7 +637,49 @@ export function PermissionManagementPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={!!selectedUser && !roleDialogOpen && !deleteDialogOpen && !permissionsDialogOpen} onOpenChange={(open) => !open && setSelectedUser(null)}>
+      <Dialog open={usernameDialogOpen} onOpenChange={setUsernameDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>修改用户名</DialogTitle>
+          </DialogHeader>
+          {selectedUser && (
+            <div className="space-y-4">
+              <div className="p-4 bg-gray-50 rounded-lg">
+                <p className="text-xs text-gray-500">当前用户名</p>
+                <p className="font-medium text-gray-900">{selectedUser.username}</p>
+                <p className="text-xs text-gray-500 mt-2">邮箱</p>
+                <p className="text-sm text-gray-900">{selectedUser.email}</p>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="newUsername">新用户名</Label>
+                <Input
+                  id="newUsername"
+                  value={newUsername}
+                  onChange={(e) => setNewUsername(e.target.value)}
+                  placeholder="输入新用户名（3-20个字符）"
+                />
+                <p className="text-xs text-gray-500">
+                  用户名长度必须在3-20个字符之间
+                </p>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setUsernameDialogOpen(false)}>
+                  取消
+                </Button>
+                <Button 
+                  onClick={handleUsernameChange} 
+                  className="bg-indigo-600 hover:bg-indigo-700"
+                  disabled={!newUsername || newUsername.length < 3 || newUsername.length > 20}
+                >
+                  确认修改
+                </Button>
+              </DialogFooter>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!selectedUser && !roleDialogOpen && !deleteDialogOpen && !permissionsDialogOpen && !usernameDialogOpen} onOpenChange={(open) => !open && setSelectedUser(null)}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>用户详情</DialogTitle>

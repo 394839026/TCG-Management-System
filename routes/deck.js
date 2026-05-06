@@ -3,7 +3,137 @@ const router = express.Router();
 const { protect } = require('../middleware/auth');
 const abac = require('../middleware/abac');
 const Deck = require('../models/Deck');
+const Task = require('../models/Task');
+const UserTask = require('../models/UserTask');
 const { body, validationResult } = require('express-validator');
+
+// 辅助函数：获取周期的开始时间
+function getPeriodStart(taskType) {
+  const now = new Date();
+  const periodStart = new Date(now);
+  
+  if (taskType === 'daily') {
+    periodStart.setHours(0, 0, 0, 0);
+  } else if (taskType === 'weekly') {
+    // 周一作为一周的开始
+    const day = periodStart.getDay();
+    const diff = periodStart.getDate() - day + (day === 0 ? -6 : 1);
+    periodStart.setDate(diff);
+    periodStart.setHours(0, 0, 0, 0);
+  }
+  
+  return periodStart;
+}
+
+// 辅助函数：获取周期的结束时间
+function getPeriodEnd(taskType) {
+  const periodStart = getPeriodStart(taskType);
+  const periodEnd = new Date(periodStart);
+  
+  if (taskType === 'daily') {
+    periodEnd.setHours(23, 59, 59, 999);
+  } else if (taskType === 'weekly') {
+    periodEnd.setDate(periodStart.getDate() + 6);
+    periodEnd.setHours(23, 59, 59, 999);
+  }
+  
+  return periodEnd;
+}
+
+// 更新任务进度
+const updateTaskProgress = async (userId, action, count = 1) => {
+  try {
+    console.log(`🎯 更新任务进度，用户ID: ${userId}，动作: ${action}`);
+    const now = new Date();
+    
+    // 获取所有相关的任务
+    const tasks = await Task.find({
+      isActive: true,
+      'target.action': action,
+      $or: [
+        { validUntil: { $exists: false } },
+        { validUntil: { $gte: now } }
+      ]
+    });
+    
+    console.log('📋 找到相关任务数量:', tasks.length);
+    
+    if (tasks.length === 0) {
+      return { updated: 0, completedTasks: [] };
+    }
+    
+    let updatedCount = 0;
+    let completedTasks = [];
+    
+    for (const task of tasks) {
+      const periodStart = getPeriodStart(task.type);
+      const periodEnd = getPeriodEnd(task.type);
+      
+      // 查找或创建用户任务
+      let userTask = await UserTask.findOne({
+        userId: userId,
+        taskId: task._id,
+        periodStart: periodStart
+      });
+      
+      if (!userTask) {
+        userTask = new UserTask({
+          userId: userId,
+          taskId: task._id,
+          progress: 0,
+          status: 'not-started',
+          periodStart: periodStart,
+          periodEnd: periodEnd
+        });
+      }
+      
+      // 检查是否已经领取过奖励（一次性任务
+      if (task.type === 'achievement' || task.type === 'one-time') {
+        const claimedTask = await UserTask.findOne({
+          userId: userId,
+          taskId: task._id,
+          status: 'claimed'
+        });
+        if (claimedTask) continue;
+      }
+      
+      // 检查是否已经完成但未领取
+      if (userTask.status === 'completed' || userTask.status === 'claimed') {
+        continue;
+      }
+      
+      // 更新进度
+      userTask.progress = Math.min(
+        userTask.progress + count,
+        task.target.value
+      );
+      
+      // 更新状态
+      if (userTask.progress >= task.target.value) {
+        userTask.status = 'completed';
+        userTask.completedAt = new Date();
+        completedTasks.push({
+          taskId: task._id,
+          taskName: task.name,
+          rewards: task.rewards
+        });
+      } else if (userTask.progress > 0) {
+        userTask.status = 'in-progress';
+      } else {
+        userTask.status = 'not-started';
+      }
+      
+      await userTask.save();
+      updatedCount++;
+      console.log('✅ 更新任务:', task.name, '进度:', userTask.progress);
+    }
+    
+    return { updated: updatedCount, completedTasks: completedTasks };
+  } catch (error) {
+    console.error('❌ 更新任务进度失败:', error);
+    return { updated: 0, completedTasks: [] };
+  }
+};
 
 // 符文战场卡组验证函数
 const validateRuneDeck = (deck) => {
@@ -72,7 +202,7 @@ router.post('/', protect, [
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { name, game, format, description, tags, isPublic, cards, legend, mainDeck, sideDeck, battlefield, runes, tokens } = req.body;
+    const { name, game, type, format, description, tags, isPublic, cards, legend, mainDeck, sideDeck, battlefield, runes, tokens } = req.body;
     console.log('解析后的游戏类型:', game);
     
     // 符文战场验证
@@ -89,6 +219,7 @@ router.post('/', protect, [
     const deck = new Deck({
       name,
       game,
+      type: type || 'deck',
       format,
       description,
       tags,
@@ -105,11 +236,17 @@ router.post('/', protect, [
 
     await deck.save();
     console.log('卡组保存成功');
+    
+    // 更新任务进度
+    console.log('🔄 更新创建卡组任务进度');
+    const taskResult = await updateTaskProgress(req.user._id, 'create_deck', 1);
 
     res.status(201).json({
       success: true,
       message: '卡组创建成功',
-      data: deck
+      data: deck,
+      tasksUpdated: taskResult.updated,
+      completedTasks: taskResult.completedTasks
     });
   } catch (error) {
     console.error('创建卡组错误:', error);
@@ -230,48 +367,62 @@ router.get('/:id', protect, async (req, res) => {
 // @access  Private (owner)
 router.put('/:id', protect, abac({ resource: 'deck', actions: ['write'] }), async (req, res) => {
   try {
-    const { name, game, format, description, tags, isPublic, stats, cards, legend, mainDeck, sideDeck, battlefield, runes, tokens } = req.body;
+    console.log('收到更新卡组请求, ID:', req.params.id);
+    console.log('请求体:', JSON.stringify(req.body, null, 2));
+
+    const { name, game, type, format, description, tags, isPublic, stats, cards, legend, mainDeck, sideDeck, battlefield, runes, tokens } = req.body;
 
     const deck = await Deck.findById(req.params.id);
     if (!deck) {
+      console.log('卡组不存在');
       return res.status(404).json({ message: '卡组不存在' });
     }
     
-    // 符文战场验证
-    if (game === 'rune' || deck.game === 'rune') {
+    console.log('找到卡组:', deck._id, '当前游戏类型:', deck.game);
+    
+    // 符文战场验证 - 只在明确是符文战场游戏时验证
+    const effectiveGame = game || deck.game;
+    if (effectiveGame === 'rune') {
+      console.log('验证符文战场卡组');
       const validation = validateRuneDeck({ 
-        legend: legend || deck.legend,
-        mainDeck: mainDeck || deck.mainDeck, 
-        sideDeck: sideDeck || deck.sideDeck, 
-        battlefield: battlefield || deck.battlefield, 
-        runes: runes || deck.runes, 
-        tokens: tokens || deck.tokens 
+        legend: legend !== undefined ? legend : deck.legend,
+        mainDeck: mainDeck !== undefined ? mainDeck : deck.mainDeck, 
+        sideDeck: sideDeck !== undefined ? sideDeck : deck.sideDeck, 
+        battlefield: battlefield !== undefined ? battlefield : deck.battlefield, 
+        runes: runes !== undefined ? runes : deck.runes, 
+        tokens: tokens !== undefined ? tokens : deck.tokens 
       });
       if (!validation.isValid) {
+        console.log('验证失败:', validation.errors);
         return res.status(400).json({ 
           errors: validation.errors.map(msg => ({ msg })),
           warnings: validation.warnings 
         });
       }
+      console.log('验证通过');
     }
 
-    if (name) deck.name = name;
-    if (game) deck.game = game;
+    // 更新字段 - 使用更宽松的判断
+    if (name !== undefined) deck.name = name;
+    if (game !== undefined) deck.game = game;
+    if (type !== undefined) deck.type = type;
     if (format !== undefined) deck.format = format;
     if (description !== undefined) deck.description = description;
-    if (tags) deck.tags = tags;
+    if (tags !== undefined) deck.tags = tags;
     if (isPublic !== undefined) deck.isPublic = isPublic;
-    if (stats) deck.stats = { ...deck.stats, ...stats };
-    if (cards) deck.cards = cards;
+    if (stats !== undefined) deck.stats = { ...deck.stats, ...stats };
+    if (cards !== undefined) deck.cards = cards;
     // 更新新格式数据
-    if (legend) deck.legend = legend;
-    if (mainDeck) deck.mainDeck = mainDeck;
-    if (sideDeck) deck.sideDeck = sideDeck;
-    if (battlefield) deck.battlefield = battlefield;
-    if (runes) deck.runes = runes;
-    if (tokens) deck.tokens = tokens;
+    if (legend !== undefined) deck.legend = legend;
+    if (mainDeck !== undefined) deck.mainDeck = mainDeck;
+    if (sideDeck !== undefined) deck.sideDeck = sideDeck;
+    if (battlefield !== undefined) deck.battlefield = battlefield;
+    if (runes !== undefined) deck.runes = runes;
+    if (tokens !== undefined) deck.tokens = tokens;
 
+    console.log('准备保存卡组');
     await deck.save();
+    console.log('卡组保存成功');
 
     res.json({
       success: true,
@@ -280,7 +431,12 @@ router.put('/:id', protect, abac({ resource: 'deck', actions: ['write'] }), asyn
     });
   } catch (error) {
     console.error('更新卡组错误:', error);
-    res.status(500).json({ message: '服务器错误' });
+    console.error('错误详情:', error.message);
+    if (error.name === 'ValidationError') {
+      const validationErrors = Object.values(error.errors).map(err => ({ msg: err.message }));
+      return res.status(400).json({ message: '数据验证失败', errors: validationErrors });
+    }
+    res.status(500).json({ message: '服务器错误', error: error.message });
   }
 });
 

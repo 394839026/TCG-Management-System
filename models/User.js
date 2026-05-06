@@ -1,7 +1,12 @@
+// 用户数据模型 - 定义TCG卡牌管理系统的用户结构
+// 包含认证信息、个人资料、等级系统、权限控制等
+
 const mongoose = require('mongoose');
 const bcrypt = require('bcryptjs');
 
+// 用户Schema定义
 const userSchema = new mongoose.Schema({
+  // 用户唯一标识 - 格式: TCG+年份后两位+4位序号
   uid: {
     type: String,
     unique: true,
@@ -11,6 +16,7 @@ const userSchema = new mongoose.Schema({
       return `TCG${new Date().getFullYear().toString().slice(-2)}${String(Math.floor(Math.random() * 9000) + 1000)}`;
     }
   },
+  // 用户名
   username: {
     type: String,
     required: [true, '用户名是必填项'],
@@ -19,6 +25,7 @@ const userSchema = new mongoose.Schema({
     minlength: [3, '用户名至少需要3个字符'],
     maxlength: [20, '用户名不能超过20个字符']
   },
+  // 邮箱
   email: {
     type: String,
     required: [true, '邮箱是必填项'],
@@ -27,25 +34,30 @@ const userSchema = new mongoose.Schema({
     trim: true,
     match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, '请输入有效的邮箱地址']
   },
+  // 密码 - 会被bcrypt加密
   password: {
     type: String,
     required: [true, '密码是必填项'],
     minlength: [6, '密码至少需要6个字符']
   },
+  // 用户角色 - 普通用户、管理员、超级管理员
   role: {
     type: String,
     enum: ['user', 'admin', 'superadmin'],
     default: 'user'
   },
+  // 用户头像
   avatar: {
     type: String,
     default: ''
   },
+  // 个人简介
   bio: {
     type: String,
     maxlength: [500, '个人简介不能超过500个字符'],
     default: ''
   },
+  // 用户设置
   settings: {
     theme: {
       type: String,
@@ -62,17 +74,18 @@ const userSchema = new mongoose.Schema({
       default: 'card'
     }
   },
-  // 新增字段 - 用户类型
+  // 用户类型 - 个人用户、战队、店铺
   userType: {
     type: String,
     enum: ['personal', 'team', 'shop'],
     default: 'personal'
   },
-  // 关联的战队和店铺
+  // 关联的战队列表
   teams: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Team'
   }],
+  // 关联的店铺列表
   shops: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Shop'
@@ -87,7 +100,7 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'InventoryItem'
   }],
-  // 页面访问权限
+  // 页面访问权限控制
   permissions: {
     teams: { type: Boolean, default: true },
     shops: { type: Boolean, default: true },
@@ -99,26 +112,34 @@ const userSchema = new mongoose.Schema({
     friends: { type: Boolean, default: true },
     favorites: { type: Boolean, default: true },
   },
-  // 登录历史
+  // 登录历史记录
   lastLogin: Date,
   loginHistory: [{
     ip: String,
     userAgent: String,
     loginAt: { type: Date, default: Date.now }
   }],
-  // 等级系统
+  // 等级系统 - 最高100级
   level: {
     type: Number,
     default: 1,
     min: 1,
     max: 100
   },
+  // 经验值
   exp: {
     type: Number,
     default: 0,
     min: 0
   },
+  // 积分
   points: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  // 星币
+  coins: {
     type: Number,
     default: 0,
     min: 0
@@ -132,15 +153,17 @@ const userSchema = new mongoose.Schema({
     default: 0,
     min: 0
   },
+  // 每日礼物领取记录
+  lastGiftDate: Date,
   createdAt: {
     type: Date,
     default: Date.now
   }
 }, {
-  timestamps: true
+  timestamps: true // 自动添加createdAt和updatedAt字段
 });
 
-// 生成UID（支持新用户和已有用户）
+// 保存前自动生成UID（支持新用户和已有用户）
 userSchema.pre('save', async function() {
   if (!this.uid) {
     const currentYear = new Date().getFullYear().toString().slice(-2);
@@ -159,7 +182,7 @@ userSchema.pre('save', async function() {
   }
 });
 
-// 设置settings的默认值
+// 保存前设置settings的默认值
 userSchema.pre('save', function() {
   if (!this.settings) {
     this.settings = {
@@ -170,7 +193,7 @@ userSchema.pre('save', function() {
   }
 });
 
-// 在保存前加密密码
+// 保存前自动加密密码
 userSchema.pre('save', async function() {
   if (!this.isModified('password')) {
     return;
@@ -179,7 +202,7 @@ userSchema.pre('save', async function() {
   this.password = await bcrypt.hash(this.password, salt);
 });
 
-// 比较密码方法
+// 密码验证方法
 userSchema.methods.matchPassword = async function(enteredPassword) {
   return await bcrypt.compare(enteredPassword, this.password);
 };
@@ -222,6 +245,14 @@ userSchema.methods.addExp = async function(amount) {
 userSchema.methods.addPoints = async function(amount) {
   if (amount <= 0) return false;
   this.points += amount;
+  await this.save();
+  return true;
+};
+
+// 添加星币
+userSchema.methods.addCoins = async function(amount) {
+  if (amount <= 0) return false;
+  this.coins += amount;
   await this.save();
   return true;
 };
@@ -289,4 +320,5 @@ userSchema.methods.checkIn = async function() {
   };
 };
 
+// 导出用户模型
 module.exports = mongoose.model('User', userSchema);

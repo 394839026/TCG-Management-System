@@ -35,6 +35,7 @@ export interface Team {
   fundPool?: number
   donationRecords?: DonationRecord[]
   investmentRecords?: InvestmentRecord[]
+  groupChat?: string | { _id: string; name: string }
   createdAt: string
   updatedAt?: string
 }
@@ -142,6 +143,11 @@ export const teamService = {
     date?: string
   }) => {
     const response = await apiClient.post(`/teams/${teamId}/investments`, data)
+    return response.data
+  },
+
+  createGroupChat: async (teamId: string) => {
+    const response = await apiClient.post(`/teams/${teamId}/create-group-chat`)
     return response.data
   },
 }
@@ -260,15 +266,34 @@ export const teamInventoryService = {
   },
 }
 
+export type ShopType = 'physical' | 'online' | 'virtual';
+
 export interface Shop {
   _id: string
   name: string
   description?: string
+  type: ShopType
   location?: {
     address: string
     city: string
     province: string
     postalCode: string
+  }
+  logo?: string
+  coverImage?: string
+  contactInfo?: {
+    phone: string
+    email: string
+    website: string
+    socialMedia: {
+      wechat: string
+      qq: string
+    }
+  }
+  businessHours?: {
+    openTime: string
+    closeTime: string
+    workdays: string[]
   }
   owner: string
   employees: Array<{ user: string; role: string }>
@@ -307,12 +332,101 @@ export const shopService = {
     const response = await apiClient.get(`/shops/${id}/dashboard`)
     return response.data
   },
+
+  getInventory: async (shopId: string, params?: { search?: string; rarity?: string; itemType?: string }) => {
+    const response = await apiClient.get(`/shops/${shopId}/inventory`, { params })
+    return response.data
+  },
+
+  addToInventory: async (shopId: string, inventoryItemId: string, quantity?: number) => {
+    console.log('=== 前端调用 addToInventory:', { shopId, inventoryItemId, quantity });
+    const response = await apiClient.post(`/shops/${shopId}/inventory`, { inventoryItemId, quantity });
+    console.log('API 响应:', response);
+    return response.data;
+  },
+
+  removeFromInventory: async (shopId: string, itemId: string) => {
+    const response = await apiClient.delete(`/shops/${shopId}/inventory/${itemId}`)
+    return response.data
+  },
+
+  updateInventoryItem: async (shopId: string, itemId: string, data: any) => {
+    const response = await apiClient.put(`/shops/${shopId}/inventory/${itemId}`, data)
+    return response.data
+  },
+
+  toggleListed: async (shopId: string, itemId: string, isListed: boolean) => {
+    const response = await apiClient.put(`/shops/${shopId}/inventory/${itemId}/toggle-listed`, { isListed })
+    return response.data
+  },
+
+  getInventoryStats: async (shopId: string) => {
+    const response = await apiClient.get(`/shops/${shopId}/inventory/stats`)
+    return response.data
+  },
+
+  getEmployees: async (shopId: string) => {
+    const response = await apiClient.get(`/shops/${shopId}/employees`)
+    return response.data
+  },
+
+  addEmployee: async (shopId: string, email: string, role: string) => {
+    const response = await apiClient.post(`/shops/${shopId}/employees`, { email, role })
+    return response.data
+  },
+
+  removeEmployee: async (shopId: string, employeeId: string) => {
+    const response = await apiClient.delete(`/shops/${shopId}/employees/${employeeId}`)
+    return response.data
+  },
+
+  updateEmployeeRole: async (shopId: string, employeeId: string, role: string) => {
+    const response = await apiClient.put(`/shops/${shopId}/employees/${employeeId}/role`, { role })
+    return response.data
+  },
+
+  // 货架管理
+  getShelves: async (shopId: string) => {
+    const response = await apiClient.get(`/shops/${shopId}/shelves`)
+    return response.data
+  },
+
+  createShelf: async (shopId: string, data: { name: string; description?: string; capacity?: number }) => {
+    const response = await apiClient.post(`/shops/${shopId}/shelves`, data)
+    return response.data
+  },
+
+  updateShelf: async (shopId: string, shelfId: string, data: { name?: string; description?: string; capacity?: number }) => {
+    const response = await apiClient.put(`/shops/${shopId}/shelves/${shelfId}`, data)
+    return response.data
+  },
+
+  deleteShelf: async (shopId: string, shelfId: string) => {
+    const response = await apiClient.delete(`/shops/${shopId}/shelves/${shelfId}`)
+    return response.data
+  },
+
+  addItemToShelf: async (shopId: string, shelfId: string, data: { inventoryItemId: string; quantity?: number; position?: string }) => {
+    const response = await apiClient.post(`/shops/${shopId}/shelves/${shelfId}/items`, data)
+    return response.data
+  },
+
+  updateShelfItem: async (shopId: string, shelfId: string, itemId: string, data: { quantity?: number; position?: string }) => {
+    const response = await apiClient.put(`/shops/${shopId}/shelves/${shelfId}/items/${itemId}`, data)
+    return response.data
+  },
+
+  removeItemFromShelf: async (shopId: string, shelfId: string, itemId: string) => {
+    const response = await apiClient.delete(`/shops/${shopId}/shelves/${shelfId}/items/${itemId}`)
+    return response.data
+  },
 }
 
 export interface Deck {
   _id: string;
   name: string;
   game: string;
+  type?: 'building' | 'deck';
   format?: string;
   description?: string;
   tags?: string[];
@@ -482,6 +596,11 @@ export const messageService = {
     return response.data
   },
 
+  markAllAsRead: async () => {
+    const response = await apiClient.put('/trade/messages/read-all')
+    return response.data
+  },
+
   getUnreadCount: async () => {
     const response = await apiClient.get('/trade/messages/unread-count')
     return response.data
@@ -578,7 +697,7 @@ export const analyticsService = {
 export interface Notification {
   _id: string
   recipient: string
-  type: 'welcome' | 'friend_request' | 'friend_accepted' | 'system' | 'trade'
+  type: 'welcome' | 'friend_request' | 'friend_accepted' | 'system' | 'trade' | 'order_created' | 'order_cancelled' | 'order_confirmed' | 'order_completed' | 'group_invite'
   title: string
   content: string
   isRead: boolean
@@ -619,6 +738,66 @@ export const notificationService = {
   },
 }
 
+export interface Announcement {
+  _id: string
+  title: string
+  content: string
+  type: 'update' | 'announcement' | 'important' | 'event'
+  priority: 'low' | 'normal' | 'high' | 'urgent'
+  isPinned: boolean
+  isActive: boolean
+  createdBy: string | { _id: string; username: string; avatar?: string }
+  tags?: string[]
+  views?: number
+  expiresAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export const announcementService = {
+  getAnnouncements: async (params?: { page?: number; limit?: number; type?: string; isActive?: string }) => {
+    const response = await apiClient.get('/announcements', { params })
+    return response.data
+  },
+
+  getAnnouncement: async (id: string) => {
+    const response = await apiClient.get(`/announcements/${id}`)
+    return response.data
+  },
+
+  createAnnouncement: async (data: {
+    title: string
+    content: string
+    type?: string
+    priority?: string
+    isPinned?: boolean
+    tags?: string[]
+    expiresAt?: string
+  }) => {
+    const response = await apiClient.post('/announcements', data)
+    return response.data
+  },
+
+  updateAnnouncement: async (id: string, data: {
+    title?: string
+    content?: string
+    type?: string
+    priority?: string
+    isPinned?: boolean
+    isActive?: boolean
+    tags?: string[]
+    expiresAt?: string
+  }) => {
+    const response = await apiClient.put(`/announcements/${id}`, data)
+    return response.data
+  },
+
+  deleteAnnouncement: async (id: string) => {
+    const response = await apiClient.delete(`/announcements/${id}`)
+    return response.data
+  },
+}
+
 export const favoriteService = {
   getFavorites: async () => {
     const response = await apiClient.get('/favorites')
@@ -637,6 +816,794 @@ export const favoriteService = {
 
   checkFavorite: async (listingId: string) => {
     const response = await apiClient.get(`/favorites/check/${listingId}`)
+    return response.data
+  },
+}
+
+export interface OrderItem {
+  shopInventoryItem: string | {
+    _id: string
+    template?: {
+      _id: string
+      itemName: string
+      rarity?: string
+      itemType?: string
+      gameType?: string[]
+      images?: string[]
+      runeCardInfo?: {
+        version?: string
+        cardNumber?: string
+      }
+    }
+  }
+  quantity: number
+  price: number
+  itemName: string
+  itemSnapshot?: {
+    rarity?: string
+    itemType?: string
+    gameType?: string[]
+    images?: string[]
+    runeCardInfo?: {
+      version?: string
+      cardNumber?: string
+    }
+  }
+}
+
+export interface Order {
+  _id: string
+  orderNumber: string
+  user: string | { _id: string; username: string; email?: string }
+  shop: string | { _id: string; name: string; logo?: string }
+  items: OrderItem[]
+  totalAmount: number
+  status: 'pending' | 'confirmed' | 'completed' | 'cancelled'
+  notes?: string
+  groupChat?: string
+  cancelReason?: string
+  confirmedBy?: string
+  confirmedAt?: string
+  completedBy?: string
+  completedAt?: string
+  cancelledBy?: string
+  cancelledAt?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export const orderService = {
+  createOrder: async (shopId: string, data: {
+    items: Array<{ shopInventoryItemId: string; quantity: number }>
+    notes?: string
+  }) => {
+    const response = await apiClient.post(`/shops/${shopId}/orders`, data)
+    return response.data
+  },
+
+  getMyOrders: async (params?: { status?: string; page?: number; limit?: number }) => {
+    const response = await apiClient.get('/orders', { params })
+    return response.data
+  },
+
+  getOrderById: async (orderId: string) => {
+    const response = await apiClient.get(`/orders/${orderId}`)
+    return response.data
+  },
+
+  cancelOrder: async (orderId: string, reason?: string) => {
+    const response = await apiClient.put(`/orders/${orderId}/cancel`, { reason })
+    return response.data
+  },
+
+  confirmOrder: async (shopId: string, orderId: string) => {
+    const response = await apiClient.put(`/shops/${shopId}/orders/${orderId}/confirm`)
+    return response.data
+  },
+
+  completeOrder: async (shopId: string, orderId: string) => {
+    const response = await apiClient.put(`/shops/${shopId}/orders/${orderId}/complete`)
+    return response.data
+  },
+
+  getShopOrders: async (shopId: string, params?: { status?: string; page?: number; limit?: number }) => {
+    const response = await apiClient.get(`/shops/${shopId}/orders/shop/list`, { params })
+    return response.data
+  },
+}
+
+export interface ShopConversation {
+  _id: string
+  shop: {
+    _id: string
+    name: string
+    logo?: string
+    employees?: Array<{ user: { _id: string; username: string }; role: string }>
+  }
+  customer: {
+    _id: string
+    username: string
+    avatar?: string
+  }
+  lastMessage?: {
+    content: string
+    sender: { _id: string; username: string }
+    createdAt: string
+  }
+  unreadCount: number
+  createdAt: string
+  updatedAt: string
+  isShopConversation: boolean
+}
+
+export interface ShopMessage {
+  _id: string
+  conversation: string
+  sender: { _id: string; username: string; avatar?: string }
+  content: string
+  isRead: string[]
+  createdAt: string
+}
+
+export const shopMessageService = {
+  getConversations: async () => {
+    const response = await apiClient.get('/shop-messages/conversations')
+    return response.data
+  },
+
+  getConversationMessages: async (conversationId: string) => {
+    const response = await apiClient.get(`/shop-messages/conversations/${conversationId}`)
+    return response.data
+  },
+
+  sendMessage: async (conversationId: string, content: string) => {
+    const response = await apiClient.post(`/shop-messages/conversations/${conversationId}`, { content })
+    return response.data
+  },
+
+  contactShop: async (shopId: string, initialMessage?: string) => {
+    const response = await apiClient.post(`/shop-messages/contact/${shopId}`, { initialMessage })
+    return response.data
+  },
+
+  getUnreadCount: async () => {
+    const response = await apiClient.get('/shop-messages/unread-count')
+    return response.data
+  },
+}
+
+// 群聊相关接口
+export interface GroupChat {
+  _id: string
+  name: string
+  description?: string
+  icon?: string
+  creator: { _id: string; username: string; avatar?: string }
+  members: Array<{
+    user: { _id: string; username: string; avatar?: string }
+    role: 'owner' | 'admin' | 'member'
+    joinedAt: string
+    muted: boolean
+  }>
+  lastMessage?: {
+    content: string
+    sender: { _id: string; username: string }
+    createdAt: string
+  }
+  type: 'system' | 'team' | 'custom'
+  level: number
+  isPublic: boolean
+  maxMembers: number
+  createdAt: string
+  updatedAt: string
+  unreadCount?: number
+  team?: { _id: string; name: string; logo?: string }
+}
+
+export interface GroupLevelConfig {
+  name: string
+  maxMembers: number
+  icon: string
+  description: string
+}
+
+export interface GroupMessage {
+  _id: string
+  sender: { _id: string; username: string; avatar?: string }
+  content: string
+  readBy: string[]
+  createdAt: string
+}
+
+export const groupChatService = {
+  // 获取用户的群聊列表
+  getMyGroups: async (params?: { page?: number; limit?: number }) => {
+    const response = await apiClient.get('/group-chats', { params })
+    return response.data
+  },
+
+  // 获取所有群聊（管理员）
+  getAllGroups: async (params?: { page?: number; limit?: number }) => {
+    const response = await apiClient.get('/group-chats/all', { params })
+    return response.data
+  },
+
+  // 获取群聊详情
+  getGroup: async (groupId: string) => {
+    const response = await apiClient.get(`/group-chats/${groupId}`)
+    return response.data
+  },
+
+  // 创建群聊（管理员）
+  createGroup: async (data: {
+    name: string
+    description?: string
+    icon?: string
+    type?: string
+    isPublic?: boolean
+    maxMembers?: number
+    memberIds?: string[]
+  }) => {
+    const response = await apiClient.post('/group-chats', data)
+    return response.data
+  },
+
+  // 更新群聊信息
+  updateGroup: async (
+    groupId: string,
+    data: {
+      name?: string
+      description?: string
+      icon?: string
+      isPublic?: boolean
+      maxMembers?: number
+      settings?: any
+    }
+  ) => {
+    const response = await apiClient.put(`/group-chats/${groupId}`, data)
+    return response.data
+  },
+
+  // 删除群聊
+  deleteGroup: async (groupId: string) => {
+    const response = await apiClient.delete(`/group-chats/${groupId}`)
+    return response.data
+  },
+
+  // 删除所有群聊（仅超级管理员）
+  deleteAllGroups: async () => {
+    const response = await apiClient.delete('/group-chats/all')
+    return response.data
+  },
+
+  // 添加成员
+  addMembers: async (groupId: string, userIds: string[]) => {
+    const response = await apiClient.post(`/group-chats/${groupId}/members`, { userIds })
+    return response.data
+  },
+
+  // 更新成员权限
+  updateMember: async (
+    groupId: string,
+    userId: string,
+    data: { role?: string; muted?: boolean }
+  ) => {
+    const response = await apiClient.put(`/group-chats/${groupId}/members/${userId}`, data)
+    return response.data
+  },
+
+  // 移除成员
+  removeMember: async (groupId: string, userId: string) => {
+    const response = await apiClient.delete(`/group-chats/${groupId}/members/${userId}`)
+    return response.data
+  },
+
+  // 发送消息
+  sendMessage: async (groupId: string, content: string) => {
+    const response = await apiClient.post(`/group-chats/${groupId}/messages`, { content })
+    return response.data
+  },
+
+  // 获取消息
+  getMessages: async (groupId: string, params?: { page?: number; limit?: number }) => {
+    const response = await apiClient.get(`/group-chats/${groupId}/messages`, { params })
+    return response.data
+  },
+
+  // 获取群聊等级配置
+  getLevelConfig: async () => {
+    const response = await apiClient.get('/group-chats/level-config')
+    return response.data
+  },
+
+  // 标记单个群聊消息为已读
+  markAsRead: async (groupId: string) => {
+    const response = await apiClient.put(`/group-chats/${groupId}/read`)
+    return response.data
+  },
+
+  // 标记所有群聊消息为已读
+  markAllAsRead: async () => {
+    const response = await apiClient.put('/group-chats/read-all')
+    return response.data
+  },
+}
+
+export interface Task {
+  _id: string
+  name: string
+  description?: string
+  type: 'daily' | 'weekly' | 'achievement' | 'one-time'
+  category: 'inventory' | 'trade' | 'deck' | 'shop' | 'social' | 'other'
+  target: {
+    action: string
+    value: number
+    inventoryItemId?: string
+    cardType?: string
+    gameType?: string
+  }
+  rewards: {
+    exp: number
+    points: number
+    coins: number
+  }
+  isActive: boolean
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+  userProgress?: UserTaskProgress
+}
+
+export interface UserTaskProgress {
+  _id: string
+  userId: string
+  taskId: string
+  progress: number
+  status: 'not-started' | 'in-progress' | 'completed' | 'claimed'
+  completedAt?: string
+  claimedAt?: string
+  periodStart: string
+  periodEnd?: string
+}
+
+export const taskService = {
+  // 获取所有任务
+  getTasks: async () => {
+    const response = await apiClient.get('/tasks')
+    return response.data
+  },
+
+  // 获取我的任务进度
+  getMyTasks: async () => {
+    const response = await apiClient.get('/tasks/my')
+    return response.data
+  },
+
+  // 领取任务奖励
+  claimReward: async (taskId: string) => {
+    const response = await apiClient.post(`/tasks/${taskId}/claim`)
+    return response.data
+  },
+
+  // 更新任务进度
+  updateProgress: async (action: string, data?: any) => {
+    const response = await apiClient.post(`/tasks/progress/${action}`, data)
+    return response.data
+  },
+
+  // 初始化默认任务（管理员）
+  initDefaultTasks: async () => {
+    const response = await apiClient.post('/tasks/init-default')
+    return response.data
+  },
+
+  // ==================== 管理员接口 ====================
+  // 获取所有任务（管理员）
+  getAllTasksAdmin: async () => {
+    const response = await apiClient.get('/tasks/admin/all')
+    return response.data
+  },
+
+  // 创建新任务
+  createTask: async (data: Partial<Task>) => {
+    const response = await apiClient.post('/tasks/admin', data)
+    return response.data
+  },
+
+  // 更新任务
+  updateTask: async (id: string, data: Partial<Task>) => {
+    const response = await apiClient.put(`/tasks/admin/${id}`, data)
+    return response.data
+  },
+
+  // 删除任务
+  deleteTask: async (id: string) => {
+    const response = await apiClient.delete(`/tasks/admin/${id}`)
+    return response.data
+  },
+}
+
+// ==================== 平台商店 ====================
+export interface PlatformStoreItem {
+  _id: string
+  itemName: string
+  description?: string
+  itemType: 'inventory_item' | 'points' | 'exp' | 'badge' | 'title' | 'other'
+  currencyType: 'points' | 'coins'
+  price: number
+  inventoryItem?: any
+  stock: number
+  itemQuantity: number
+  redeemedCount: number
+  limitPerUser: number
+  validFrom?: string
+  validUntil?: string
+  isActive: boolean
+  sortOrder: number
+  image?: string
+  tags?: string[]
+  createdBy?: any
+  createdAt: string
+  updatedAt: string
+}
+
+export interface PlatformStoreRedemption {
+  _id: string
+  userId: string
+  storeItem: PlatformStoreItem
+  itemName: string
+  currencyType: 'points' | 'coins'
+  price: number
+  quantity: number
+  status: 'pending' | 'completed' | 'failed' | 'refunded'
+  userInventoryItem?: any
+  notes?: string
+  createdAt: string
+}
+
+export const platformStoreService = {
+  // 获取所有有效的商店物品
+  getStoreItems: async () => {
+    const response = await apiClient.get('/platform-store')
+    return response.data
+  },
+
+  // 获取单个商店物品详情
+  getStoreItemById: async (id: string) => {
+    const response = await apiClient.get(`/platform-store/${id}`)
+    return response.data
+  },
+
+  // 兑换商店物品
+  redeemStoreItem: async (id: string, quantity: number = 1) => {
+    const response = await apiClient.post(`/platform-store/${id}/redeem`, { quantity })
+    return response.data
+  },
+
+  // 获取用户的兑换记录
+  getMyRedemptions: async () => {
+    const response = await apiClient.get('/platform-store/redemptions/my')
+    return response.data
+  },
+
+  // ==================== 管理员接口 ====================
+  // 获取所有商店物品（管理员）
+  getAllStoreItemsAdmin: async () => {
+    const response = await apiClient.get('/platform-store/admin/all')
+    return response.data
+  },
+
+  // 创建商店物品
+  createStoreItem: async (data: Partial<PlatformStoreItem>) => {
+    const response = await apiClient.post('/platform-store', data)
+    return response.data
+  },
+
+  // 更新商店物品
+  updateStoreItem: async (id: string, data: Partial<PlatformStoreItem>) => {
+    const response = await apiClient.put(`/platform-store/${id}`, data)
+    return response.data
+  },
+
+  // 删除商店物品
+  deleteStoreItem: async (id: string) => {
+    const response = await apiClient.delete(`/platform-store/${id}`)
+    return response.data
+  },
+}
+
+// ==================== 抽卡系统 ====================
+export const gachaService = {
+  // 消耗金币
+  spendCoins: async (amount: number) => {
+    const response = await apiClient.post('/gacha/spend', { amount })
+    return response.data
+  },
+  
+  // 增加金币
+  addCoins: async (amount: number) => {
+    const response = await apiClient.post('/gacha/add', { amount })
+    return response.data
+  },
+  
+  // 获取礼物状态
+  getGiftStatus: async () => {
+    const response = await apiClient.get('/gacha/gift/status')
+    return response.data
+  },
+  
+  // 领取礼物
+  claimGift: async () => {
+    const response = await apiClient.post('/gacha/gift/claim')
+    return response.data
+  },
+}
+
+// ==================== 抽卡概率管理 ====================
+export interface RarityProbability {
+  rarityId: string
+  rarityName: string
+  probability: number
+  color: string
+  bgColor: string
+  borderColor: string
+  glowColor: string
+}
+
+export interface GachaProbabilityConfig {
+  _id?: string
+  name: string
+  description?: string
+  isActive?: boolean
+  rarities: RarityProbability[]
+  createdBy?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+export const gachaProbabilityService = {
+  // 获取当前激活的概率配置
+  getActiveConfig: async () => {
+    const response = await apiClient.get('/gacha-probability')
+    return response.data
+  },
+  
+  // 获取所有配置列表（管理员）
+  getAllConfigs: async () => {
+    const response = await apiClient.get('/gacha-probability/admin/all')
+    return response.data
+  },
+  
+  // 获取单个配置（管理员）
+  getConfig: async (id: string) => {
+    const response = await apiClient.get(`/gacha-probability/admin/${id}`)
+    return response.data
+  },
+  
+  // 创建新配置（管理员）
+  createConfig: async (data: Partial<GachaProbabilityConfig>) => {
+    const response = await apiClient.post('/gacha-probability', data)
+    return response.data
+  },
+  
+  // 更新配置（管理员）
+  updateConfig: async (id: string, data: Partial<GachaProbabilityConfig>) => {
+    const response = await apiClient.put(`/gacha-probability/${id}`, data)
+    return response.data
+  },
+  
+  // 删除配置（管理员）
+  deleteConfig: async (id: string) => {
+    const response = await apiClient.delete(`/gacha-probability/${id}`)
+    return response.data
+  },
+  
+  // 激活配置（管理员）
+  activateConfig: async (id: string) => {
+    const response = await apiClient.post(`/gacha-probability/${id}/activate`)
+    return response.data
+  },
+}
+
+// ==================== 卡片类型管理 ====================
+
+export interface CardType {
+  _id: string
+  name: string
+  gameType: string
+  cardProperty?: string
+  description?: string
+  createdAt: string
+  updatedAt: string
+}
+
+export const cardTypeService = {
+  getAll: async (params?: { search?: string; gameType?: string; cardProperty?: string }) => {
+    const response = await apiClient.get('/card-types', { params })
+    return response.data
+  },
+  
+  getById: async (id: string) => {
+    const response = await apiClient.get(`/card-types/${id}`)
+    return response.data
+  },
+  
+  create: async (data: { name: string; gameType: string; cardProperty?: string; description?: string }) => {
+    const response = await apiClient.post('/card-types', data)
+    return response.data
+  },
+  
+  update: async (id: string, data: { name?: string; gameType?: string; cardProperty?: string; description?: string }) => {
+    const response = await apiClient.put(`/card-types/${id}`, data)
+    return response.data
+  },
+  
+  delete: async (id: string) => {
+    const response = await apiClient.delete(`/card-types/${id}`)
+    return response.data
+  },
+}
+
+// ==================== 抽卡用户数据 ====================
+
+// 单次抽卡结果
+export interface SingleDrawResult {
+  rarityId: string
+  rarityName: string
+  cardName?: string
+  cardId?: string
+  isPity?: boolean
+}
+
+// 模拟抽卡记录
+export interface GachaSimulationRecord {
+  _id: string
+  userId: string
+  configId: string
+  configName: string
+  drawCount: number
+  results: Array<{
+    rarityId: string
+    rarityName: string
+    count: number
+    percentage: number
+    expectedPercentage: number
+    difference: number
+  }>
+  detailedResults?: SingleDrawResult[]
+  note?: string
+  tags?: string[]
+  pityCount?: number
+  isRealGacha: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+// 收集物品
+export interface CollectedItem {
+  itemType: 'card' | 'badge' | 'title' | 'other'
+  itemId: string
+  itemName: string
+  rarity?: string
+  count: number
+  firstObtainedAt: string
+  lastObtainedAt: string
+  source: 'gacha' | 'store' | 'task' | 'trade' | 'gift' | 'other'
+  sourceDetail?: string
+  note?: string
+}
+
+// 收集分类
+export interface CollectionCategory {
+  categoryId?: string
+  categoryName: string
+  totalItems: number
+  collectedItems: number
+  completionPercentage: number
+  items: CollectedItem[]
+}
+
+// 用户收集进度
+export interface UserCollectionProgress {
+  _id: string
+  userId: string
+  totalCollected: number
+  totalUnique: number
+  categories: CollectionCategory[]
+  allItems: CollectedItem[]
+  gachaStats: {
+    totalDraws: number
+    totalSpent: number
+    rarityStats: Array<{ rarityId: string; rarityName: string; count: number }>
+    recentDraws: Array<{ rarityId: string; rarityName: string; cardName: string; drawTime: string }>
+  }
+  achievements: Array<{ achievementId: string; name: string; description: string; unlockedAt: string }>
+  customData?: any
+  createdAt: string
+  updatedAt: string
+}
+
+// 抽卡统计
+export interface GachaUserStats {
+  totalDraws: number
+  totalSpent: number
+  rarityStats: Array<{ rarityId: string; rarityName: string; count: number }>
+  recentDraws: Array<{ rarityId: string; rarityName: string; cardName: string; drawTime: string }>
+  totalCollected: number
+  totalUnique: number
+}
+
+export const gachaUserService = {
+  // ==================== 模拟抽卡记录相关 ====================
+  
+  // 保存模拟抽卡记录
+  saveSimulation: async (data: {
+    configId: string
+    configName: string
+    drawCount: number
+    results: any[]
+    detailedResults?: SingleDrawResult[]
+    note?: string
+    tags?: string[]
+    isRealGacha?: boolean
+  }) => {
+    const response = await apiClient.post('/gacha-user/simulation', data)
+    return response.data
+  },
+  
+  // 获取模拟抽卡记录列表
+  getSimulations: async (params?: {
+    page?: number
+    limit?: number
+    configId?: string
+  }) => {
+    const response = await apiClient.get('/gacha-user/simulation', { params })
+    return response.data
+  },
+  
+  // 获取单条抽卡记录详情
+  getSimulation: async (id: string) => {
+    const response = await apiClient.get(`/gacha-user/simulation/${id}`)
+    return response.data
+  },
+  
+  // 删除抽卡记录
+  deleteSimulation: async (id: string) => {
+    const response = await apiClient.delete(`/gacha-user/simulation/${id}`)
+    return response.data
+  },
+  
+  // ==================== 用户收集进度相关 ====================
+  
+  // 获取用户收集进度
+  getCollection: async () => {
+    const response = await apiClient.get('/gacha-user/collection')
+    return response.data
+  },
+  
+  // 添加收集物品
+  addCollectedItem: async (item: Partial<CollectedItem>) => {
+    const response = await apiClient.post('/gacha-user/collection/item', item)
+    return response.data
+  },
+  
+  // 更新收集物品
+  updateCollectedItem: async (itemId: string, data: Partial<CollectedItem>) => {
+    const response = await apiClient.put(`/gacha-user/collection/item/${itemId}`, data)
+    return response.data
+  },
+  
+  // 删除收集物品
+  deleteCollectedItem: async (itemId: string) => {
+    const response = await apiClient.delete(`/gacha-user/collection/item/${itemId}`)
+    return response.data
+  },
+  
+  // ==================== 统计相关 ====================
+  
+  // 获取用户抽卡统计
+  getStats: async () => {
+    const response = await apiClient.get('/gacha-user/stats')
     return response.data
   },
 }

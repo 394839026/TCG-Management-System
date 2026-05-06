@@ -4,6 +4,7 @@ const { protect } = require('../middleware/auth');
 const abac = require('../middleware/abac');
 const Shop = require('../models/Shop');
 const User = require('../models/User');
+const ShopInventoryItem = require('../models/ShopInventoryItem');
 const { body, validationResult } = require('express-validator');
 
 // @route   POST /api/shops
@@ -41,11 +42,12 @@ router.post('/', protect, [
       owner: req.user._id,
       employees: [{
         user: req.user._id,
-        role: 'manager',
+        role: 'operator',
         permissions: {
           canManageInventory: true,
           canRecordSales: true,
-          canViewReports: true
+          canViewReports: true,
+          canManageEmployees: true
         }
       }],
       location: locationData,
@@ -219,48 +221,171 @@ router.delete('/:id', protect, abac({ resource: 'shop', actions: ['delete'] }), 
   }
 });
 
+// @route   GET /api/shops/:id/employees
+// @desc    获取店铺员工列表
+// @access  Private (owner/manager)
+router.get('/:id/employees', protect, abac({ resource: 'shop', actions: ['read'] }), async (req, res) => {
+  try {
+    const shop = await Shop.findById(req.params.id).populate('employees.user', 'username email');
+    
+    if (!shop) {
+      return res.status(404).json({ message: '店铺不存在' });
+    }
+
+    res.json({
+      success: true,
+      data: shop.employees
+    });
+  } catch (error) {
+    console.error('获取员工列表错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
 // @route   POST /api/shops/:id/employees
 // @desc    添加员工
 // @access  Private (owner/manager)
 router.post('/:id/employees', protect, abac({ resource: 'shop', actions: ['manage'] }), async (req, res) => {
   try {
-    const { userId, role, permissions } = req.body;
+    const { email, role } = req.body;
     const shop = await Shop.findById(req.params.id);
     
     if (!shop) {
       return res.status(404).json({ message: '店铺不存在' });
     }
 
+    // 通过邮箱查找用户
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(404).json({ message: '未找到该邮箱对应的用户' });
+    }
+
     // 检查是否已是员工
-    const isEmployee = shop.employees.some(e => e.user.toString() === userId);
+    const isEmployee = shop.employees.some(e => e.user.toString() === user._id.toString());
     if (isEmployee) {
       return res.status(400).json({ message: '该用户已是店铺员工' });
     }
 
+    // 根据角色设置权限
+    const permissions = (role === 'owner' || role === 'operator') ? {
+      canManageInventory: true,
+      canRecordSales: true,
+      canViewReports: true,
+      canManageEmployees: true
+    } : {
+      canManageInventory: true, // 员工可以上架下架
+      canRecordSales: false,
+      canViewReports: false,
+      canManageEmployees: false
+    };
+
     shop.employees.push({
-      user: userId,
+      user: user._id,
       role: role || 'staff',
-      permissions: permissions || {
-        canManageInventory: false,
-        canRecordSales: false,
-        canViewReports: false
-      }
+      permissions
     });
 
     await shop.save();
 
     // 更新用户的shops数组
-    await User.findByIdAndUpdate(userId, {
+    await User.findByIdAndUpdate(user._id, {
       $push: { shops: shop._id }
     });
 
     res.status(201).json({
       success: true,
-      message: '员工添加成功',
-      data: shop
+      message: '员工添加成功'
     });
   } catch (error) {
     console.error('添加员工错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   DELETE /api/shops/:id/employees/:employeeId
+// @desc    移除员工
+// @access  Private (owner/manager)
+router.delete('/:id/employees/:employeeId', protect, abac({ resource: 'shop', actions: ['manage'] }), async (req, res) => {
+  try {
+    const shop = await Shop.findById(req.params.id);
+    
+    if (!shop) {
+      return res.status(404).json({ message: '店铺不存在' });
+    }
+
+    // 找到要移除的员工
+    const employeeIndex = shop.employees.findIndex(e => e._id.toString() === req.params.employeeId);
+    if (employeeIndex === -1) {
+      return res.status(404).json({ message: '未找到该员工' });
+    }
+
+    const removedEmployee = shop.employees[employeeIndex];
+
+    // 不能移除店主
+    if (removedEmployee.role === 'owner' && shop.owner.toString() === removedEmployee.user.toString()) {
+      return res.status(400).json({ message: '不能移除店主' });
+    }
+
+    // 从数组中移除
+    shop.employees.splice(employeeIndex, 1);
+    await shop.save();
+
+    // 更新用户的shops数组
+    await User.findByIdAndUpdate(removedEmployee.user, {
+      $pull: { shops: shop._id }
+    });
+
+    res.json({
+      success: true,
+      message: '员工已移除'
+    });
+  } catch (error) {
+    console.error('移除员工错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   PUT /api/shops/:id/employees/:employeeId/role
+// @desc    更新员工角色
+// @access  Private (owner/manager)
+router.put('/:id/employees/:employeeId/role', protect, abac({ resource: 'shop', actions: ['manage'] }), async (req, res) => {
+  try {
+    const { role } = req.body;
+    const shop = await Shop.findById(req.params.id);
+    
+    if (!shop) {
+      return res.status(404).json({ message: '店铺不存在' });
+    }
+
+    // 找到要更新的员工
+    const employee = shop.employees.find(e => e._id.toString() === req.params.employeeId);
+    if (!employee) {
+      return res.status(404).json({ message: '未找到该员工' });
+    }
+
+    employee.role = role;
+    // 根据角色更新权限
+    employee.permissions = role === 'owner' ? {
+      canManageInventory: true,
+      canRecordSales: true,
+      canViewReports: true,
+      canManageEmployees: true
+    } : {
+      canManageInventory: false,
+      canRecordSales: true,
+      canViewReports: false,
+      canManageEmployees: false
+    };
+
+    await shop.save();
+
+    res.json({
+      success: true,
+      message: '员工角色已更新',
+      data: employee
+    });
+  } catch (error) {
+    console.error('更新员工角色错误:', error);
     res.status(500).json({ message: '服务器错误' });
   }
 });
@@ -401,6 +526,442 @@ router.get('/:id/dashboard', protect, abac({ resource: 'shop', actions: ['read']
     });
   } catch (error) {
     console.error('获取经营看板错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// ==================== 货架管理路由 ====================
+
+// @route   GET /api/shops/:id/shelves
+// @desc    获取店铺货架列表（公开访问）
+// @access  Public
+router.get('/:id/shelves', async (req, res) => {
+  try {
+    console.log('=== 获取货架列表 ===');
+    const shop = await Shop.findById(req.params.id);
+    if (!shop) {
+      return res.status(404).json({ message: '店铺不存在' });
+    }
+
+    // 获取货架的纯JavaScript对象
+    const shelves = shop.shelves.toObject ? shop.shelves.toObject() : JSON.parse(JSON.stringify(shop.shelves));
+    console.log('货架数量:', shelves.length);
+
+    // 收集所有需要populate的inventoryItem ID
+    const inventoryItemIds = [];
+    shelves.forEach((shelf) => {
+      if (shelf.items) {
+        shelf.items.forEach((item) => {
+          if (item.inventoryItem) {
+            inventoryItemIds.push(item.inventoryItem);
+          }
+        });
+      }
+    });
+    console.log('需要populate的库存ID数量:', inventoryItemIds.length);
+
+    // 如果有需要populate的ID，则获取数据
+    if (inventoryItemIds.length > 0) {
+      try {
+        const inventoryItems = await ShopInventoryItem.find({ _id: { $in: inventoryItemIds } })
+          .populate('template')
+          .populate('addedBy', 'username');
+
+        console.log('找到的库存项数量:', inventoryItems.length);
+
+        // 创建ID到item的映射
+        const inventoryItemMap = {};
+        inventoryItems.forEach((item) => {
+          inventoryItemMap[item._id.toString()] = item.toObject ? item.toObject() : item;
+        });
+
+        // 替换货架items中的inventoryItem
+        shelves.forEach((shelf) => {
+          if (shelf.items) {
+            shelf.items.forEach((item) => {
+              if (item.inventoryItem) {
+                const itemId = item.inventoryItem.toString ? item.inventoryItem.toString() : String(item.inventoryItem);
+                if (inventoryItemMap[itemId]) {
+                  item.inventoryItem = inventoryItemMap[itemId];
+                }
+              }
+            });
+          }
+        });
+      } catch (populateError) {
+        console.error('Populate错误:', populateError);
+        // 如果populate失败，只返回原始数据
+      }
+    } else {
+      console.log('没有需要populate的库存项');
+    }
+
+    res.json({
+      success: true,
+      data: shelves
+    });
+  } catch (error) {
+    console.error('获取货架列表错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   POST /api/shops/:id/shelves
+// @desc    创建新货架
+// @access  Private (owner/manager)
+router.post('/:id/shelves', protect, abac({ resource: 'shop', actions: ['write'] }), [
+  body('name').trim().isLength({ min: 1, max: 50 }).withMessage('货架名称需要1-50个字符')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array(), message: errors.array()[0].msg });
+    }
+
+    const { name, description, location, capacity } = req.body;
+    const shop = await Shop.findById(req.params.id);
+    
+    if (!shop) {
+      return res.status(404).json({ message: '店铺不存在' });
+    }
+
+    // 检查货架名称是否已存在
+    const existingShelf = shop.shelves.find(s => s.name === name);
+    if (existingShelf) {
+      return res.status(400).json({ message: '该货架名称已存在' });
+    }
+
+    const newShelf = {
+      name,
+      description: description || '',
+      location: location || '',
+      capacity: capacity || 0,
+      items: [],
+      createdAt: new Date(),
+      updatedAt: new Date()
+    };
+
+    shop.shelves.push(newShelf);
+    await shop.save();
+
+    res.status(201).json({
+      success: true,
+      message: '货架创建成功',
+      data: shop.shelves[shop.shelves.length - 1]
+    });
+  } catch (error) {
+    console.error('创建货架错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   PUT /api/shops/:id/shelves/:shelfId
+// @desc    更新货架信息
+// @access  Private (owner/manager)
+router.put('/:id/shelves/:shelfId', protect, abac({ resource: 'shop', actions: ['write'] }), async (req, res) => {
+  try {
+    const { name, description, location, capacity } = req.body;
+    const shop = await Shop.findById(req.params.id);
+    
+    if (!shop) {
+      return res.status(404).json({ message: '店铺不存在' });
+    }
+
+    const shelf = shop.shelves.id(req.params.shelfId);
+    if (!shelf) {
+      return res.status(404).json({ message: '货架不存在' });
+    }
+
+    // 检查名称冲突
+    if (name && name !== shelf.name) {
+      const existingShelf = shop.shelves.find(s => s._id.toString() !== req.params.shelfId && s.name === name);
+      if (existingShelf) {
+        return res.status(400).json({ message: '该货架名称已存在' });
+      }
+    }
+
+    if (name !== undefined) shelf.name = name;
+    if (description !== undefined) shelf.description = description;
+    if (location !== undefined) shelf.location = location;
+    if (capacity !== undefined) shelf.capacity = capacity;
+    shelf.updatedAt = new Date();
+
+    await shop.save();
+
+    res.json({
+      success: true,
+      message: '货架更新成功',
+      data: shelf
+    });
+  } catch (error) {
+    console.error('更新货架错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   DELETE /api/shops/:id/shelves/:shelfId
+// @desc    删除货架
+// @access  Private (owner/manager)
+router.delete('/:id/shelves/:shelfId', protect, abac({ resource: 'shop', actions: ['write'] }), async (req, res) => {
+  try {
+    const shop = await Shop.findById(req.params.id);
+    
+    if (!shop) {
+      return res.status(404).json({ message: '店铺不存在' });
+    }
+
+    const shelfIndex = shop.shelves.findIndex(s => s._id.toString() === req.params.shelfId);
+    if (shelfIndex === -1) {
+      return res.status(404).json({ message: '货架不存在' });
+    }
+
+    shop.shelves.splice(shelfIndex, 1);
+    await shop.save();
+
+    res.json({
+      success: true,
+      message: '货架删除成功'
+    });
+  } catch (error) {
+    console.error('删除货架错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   POST /api/shops/:id/shelves/:shelfId/items
+// @desc    添加物品到货架
+// @access  Private (owner/manager)
+router.post('/:id/shelves/:shelfId/items', protect, abac({ resource: 'shop', actions: ['write'] }), [
+  body('inventoryItemId').notEmpty().withMessage('库存物品ID是必填项'),
+  body('quantity').optional().isInt({ min: 1 }).withMessage('数量至少为1')
+], async (req, res) => {
+  try {
+    console.log('=== 添加物品到货架开始 ===');
+    console.log('用户:', req.user?.username, req.user?._id);
+    
+    const { inventoryItemId, quantity = 1 } = req.body;
+    const shopId = req.params.id;
+    const shelfId = req.params.shelfId;
+
+    const shop = await Shop.findById(shopId);
+    console.log('店铺:', shop ? shop.name : '未找到');
+    if (!shop) {
+      return res.status(404).json({ message: '店铺不存在' });
+    }
+    
+    console.log('员工列表:', shop.employees?.map(e => ({ user: e.user, role: e.role })));
+
+    // 直接遍历找到货架
+    let foundShelf = null;
+    for (let i = 0; i < shop.shelves.length; i++) {
+      if (shop.shelves[i]._id.toString() === shelfId) {
+        foundShelf = shop.shelves[i];
+        break;
+      }
+    }
+
+    console.log('货架:', foundShelf ? foundShelf.name : '未找到');
+    if (!foundShelf) {
+      return res.status(404).json({ message: '货架不存在' });
+    }
+
+    const shopInventoryItem = await ShopInventoryItem.findById(inventoryItemId);
+    console.log('店铺库存物品:', shopInventoryItem ? '找到' : '未找到');
+    if (!shopInventoryItem) {
+      return res.status(404).json({ message: '库存物品不存在' });
+    }
+
+    // 计算已上架总数
+    let totalOnShelves = 0;
+    for (const s of shop.shelves) {
+      for (const item of s.items) {
+        const itemId = typeof item.inventoryItem === 'object' 
+          ? item.inventoryItem._id.toString() 
+          : item.inventoryItem.toString();
+        if (itemId === inventoryItemId) {
+          totalOnShelves += item.quantity;
+        }
+      }
+    }
+    console.log('已上架总数:', totalOnShelves);
+
+    // 检查是否已在当前货架
+    let existingItem = null;
+    for (const item of foundShelf.items) {
+      const itemId = typeof item.inventoryItem === 'object' 
+        ? item.inventoryItem._id.toString() 
+        : item.inventoryItem.toString();
+      if (itemId === inventoryItemId) {
+        existingItem = item;
+        break;
+      }
+    }
+    console.log('是否已在货架:', existingItem ? '是' : '否');
+
+    const newQuantity = existingItem 
+      ? totalOnShelves - existingItem.quantity + quantity 
+      : totalOnShelves + quantity;
+    console.log('新数量:', newQuantity, '库存:', shopInventoryItem.quantity);
+
+    if (newQuantity > shopInventoryItem.quantity) {
+      return res.status(400).json({ 
+        message: `上架数量不能超过库存，当前库存: ${shopInventoryItem.quantity}，已上架: ${totalOnShelves}` 
+      });
+    }
+
+    if (existingItem) {
+      existingItem.quantity += quantity;
+    } else {
+      foundShelf.items.push({
+        inventoryItem: inventoryItemId,
+        quantity: quantity,
+        addedAt: new Date()
+      });
+    }
+
+    foundShelf.updatedAt = new Date();
+    console.log('准备保存...');
+    await shop.save();
+    console.log('保存成功');
+
+    res.json({
+      success: true,
+      message: '物品添加到货架成功',
+      data: foundShelf
+    });
+    console.log('=== 添加物品到货架完成 ===');
+  } catch (error) {
+    console.error('添加物品到货架错误:', error);
+    console.error('错误堆栈:', error.stack);
+    res.status(500).json({ message: '服务器错误: ' + error.message });
+  }
+});
+
+// @route   PUT /api/shops/:id/shelves/:shelfId/items/:itemId
+// @desc    更新货架上的物品
+// @access  Private (owner/manager)
+router.put('/:id/shelves/:shelfId/items/:itemId', protect, abac({ resource: 'shop', actions: ['write'] }), async (req, res) => {
+  try {
+    const { quantity } = req.body;
+    const shop = await Shop.findById(req.params.id);
+    
+    if (!shop) {
+      return res.status(404).json({ message: '店铺不存在' });
+    }
+
+    // 直接遍历找到货架
+    let foundShelf = null;
+    for (let i = 0; i < shop.shelves.length; i++) {
+      if (shop.shelves[i]._id.toString() === req.params.shelfId) {
+        foundShelf = shop.shelves[i];
+        break;
+      }
+    }
+
+    if (!foundShelf) {
+      return res.status(404).json({ message: '货架不存在' });
+    }
+
+    // 找到物品
+    let foundItem = null;
+    let foundItemIndex = -1;
+    for (let i = 0; i < foundShelf.items.length; i++) {
+      if (foundShelf.items[i]._id.toString() === req.params.itemId) {
+        foundItem = foundShelf.items[i];
+        foundItemIndex = i;
+        break;
+      }
+    }
+
+    if (!foundItem) {
+      return res.status(404).json({ message: '物品不存在' });
+    }
+
+    if (quantity !== undefined) {
+      const shopInventoryItem = await ShopInventoryItem.findById(foundItem.inventoryItem);
+      if (!shopInventoryItem) {
+        return res.status(404).json({ message: '库存物品不存在' });
+      }
+
+      // 计算已上架总数
+      let totalOnShelves = 0;
+      for (const s of shop.shelves) {
+        for (const item of s.items) {
+          const itemId = typeof item.inventoryItem === 'object' 
+            ? item.inventoryItem._id.toString() 
+            : item.inventoryItem.toString();
+          if (itemId === foundItem.inventoryItem.toString()) {
+            totalOnShelves += item.quantity;
+          }
+        }
+      }
+      
+      // 计算新的总上架数量
+      const newTotalOnShelves = totalOnShelves - foundItem.quantity + quantity;
+
+      // 验证上架数量不超过库存
+      if (newTotalOnShelves > shopInventoryItem.quantity) {
+        return res.status(400).json({ 
+          message: `上架数量不能超过库存，当前库存: ${shopInventoryItem.quantity}，其他货架已上架: ${totalOnShelves - foundItem.quantity}` 
+        });
+      }
+
+      foundItem.quantity = quantity;
+    }
+    
+    foundShelf.updatedAt = new Date();
+    await shop.save();
+
+    res.json({
+      success: true,
+      message: '货架物品更新成功',
+      data: foundItem
+    });
+  } catch (error) {
+    console.error('更新货架物品错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   DELETE /api/shops/:id/shelves/:shelfId/items/:itemId
+// @desc    从货架移除物品
+// @access  Private (owner/manager)
+router.delete('/:id/shelves/:shelfId/items/:itemId', protect, abac({ resource: 'shop', actions: ['write'] }), async (req, res) => {
+  try {
+    const shop = await Shop.findById(req.params.id);
+    
+    if (!shop) {
+      return res.status(404).json({ message: '店铺不存在' });
+    }
+
+    // 直接遍历找到货架
+    let foundShelf = null;
+    for (let i = 0; i < shop.shelves.length; i++) {
+      if (shop.shelves[i]._id.toString() === req.params.shelfId) {
+        foundShelf = shop.shelves[i];
+        break;
+      }
+    }
+
+    if (!foundShelf) {
+      return res.status(404).json({ message: '货架不存在' });
+    }
+
+    const itemIndex = foundShelf.items.findIndex(i => i._id.toString() === req.params.itemId);
+    if (itemIndex === -1) {
+      return res.status(404).json({ message: '物品不存在' });
+    }
+
+    foundShelf.items.splice(itemIndex, 1);
+    foundShelf.updatedAt = new Date();
+    await shop.save();
+
+    res.json({
+      success: true,
+      message: '物品已从货架移除'
+    });
+  } catch (error) {
+    console.error('从货架移除物品错误:', error);
     res.status(500).json({ message: '服务器错误' });
   }
 });

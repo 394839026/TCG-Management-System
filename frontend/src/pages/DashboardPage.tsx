@@ -27,10 +27,11 @@ export function DashboardPage() {
   const totalCheckIns = user?.totalCheckIns || 0;
 
   // Fetch inventory stats
-  const { data: inventoryStats, isLoading } = useQuery({
+  const { data: inventoryStats, isLoading, refetch } = useQuery({
     queryKey: ['inventoryStats'],
     queryFn: () => inventoryService.getStats(),
     retry: 1,
+    refetchInterval: 30000, // 每30秒刷新一次
   });
 
   // Fetch recent activities
@@ -38,13 +39,51 @@ export function DashboardPage() {
     queryKey: ['recentActivities'],
     queryFn: () => activityService.getRecent(),
     retry: 1,
+    refetchInterval: 30000, // 每30秒刷新一次
   });
-
+  
+  // 获取变化数据
+  const changes = inventoryStats?.data?.changes || {};
+  
   const stats = [
-    { title: '总价值', value: formatCurrency(inventoryStats?.data?.totalValue || 0), icon: Store, change: '+18%', color: 'from-green-500 to-emerald-500' },
-    { title: '物品种类', value: inventoryStats?.data?.itemTypes?.toString() || '0', icon: BookOpen, change: '+3', color: 'from-orange-500 to-red-500' },
-    { title: '物品总数', value: inventoryStats?.data?.totalItems?.toString() || '0', icon: CreditCard, change: '+5', color: 'from-purple-500 to-pink-500' },
+    { 
+      title: '总价值', 
+      value: formatCurrency(inventoryStats?.data?.totalValue || 0), 
+      icon: Store, 
+      change: formatChange(changes.totalValuePercent, changes.totalValueChange),
+      isPositive: changes.totalValueChange === undefined ? true : changes.totalValueChange >= 0,
+      color: 'from-green-500 to-emerald-500' 
+    },
+    { 
+      title: '物品种类', 
+      value: inventoryStats?.data?.itemTypes?.toString() || '0', 
+      icon: BookOpen, 
+      change: formatNumberChange(changes.itemTypesChange),
+      isPositive: changes.itemTypesChange === undefined ? true : changes.itemTypesChange >= 0,
+      color: 'from-orange-500 to-red-500' 
+    },
+    { 
+      title: '物品总数', 
+      value: inventoryStats?.data?.totalItems?.toString() || '0', 
+      icon: CreditCard, 
+      change: formatNumberChange(changes.totalItemsChange),
+      isPositive: changes.totalItemsChange === undefined ? true : changes.totalItemsChange >= 0,
+      color: 'from-purple-500 to-pink-500' 
+    },
   ];
+  
+  // 格式化变化显示
+  function formatChange(percent: number | undefined, value: number | undefined) {
+    if (percent === undefined || value === undefined) return '首日';
+    const sign = value >= 0 ? '+' : '';
+    return `${sign}${Math.abs(percent)}%`;
+  }
+  
+  function formatNumberChange(change: number | undefined) {
+    if (change === undefined) return '首日';
+    const sign = change >= 0 ? '+' : '';
+    return `${sign}${Math.abs(change)}`;
+  }
 
   const username = user?.username || '玩家';
     const recentActivities: Activity[] = activitiesData?.data || [
@@ -58,7 +97,6 @@ export function DashboardPage() {
       console.log('✅ 签到成功:', result);
       toast.success(result.message);
       
-      // 更新用户信息
       if (user) {
         const updatedUser = {
           ...user,
@@ -66,6 +104,8 @@ export function DashboardPage() {
           level: result.data.newLevel,
           canCheckIn: false,
           totalCheckIns: result.data.totalCheckIns,
+          // 假设签到奖励也包含星币，这里我们可以根据实际后端返回的数据来更新
+          coins: (user.coins || 0) + 1000,
         };
         setUser(updatedUser);
         authService.setAuth(localStorage.getItem('token'), updatedUser);
@@ -112,11 +152,15 @@ export function DashboardPage() {
                 </div>
               </div>
               
-              {/* Points section */}
-              <div className="flex items-center gap-2">
+              {/* Points and coins section */}
+              <div className="flex items-center gap-2 flex-wrap">
                 <div className="flex items-center gap-2 bg-amber-500/10 px-3 py-1.5 rounded-full">
                   <Coins className="w-4 h-4 text-amber-500" />
                   <span className="font-semibold text-amber-600">{user?.points || 0} 积分</span>
+                </div>
+                <div className="flex items-center gap-2 bg-yellow-500/10 px-3 py-1.5 rounded-full">
+                  <Trophy className="w-4 h-4 text-yellow-500" />
+                  <span className="font-semibold text-yellow-600">{user?.coins || 0} 星币</span>
                 </div>
                 <div className="flex items-center gap-2 bg-blue-500/10 px-3 py-1.5 rounded-full">
                   <CalendarCheck className="w-4 h-4 text-blue-500" />
@@ -144,6 +188,9 @@ export function DashboardPage() {
       </Card>
 
       {/* Stats grid */}
+      <div className="mb-2">
+        <h3 className="text-sm text-muted-foreground">与昨日相比</h3>
+      </div>
       <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
         {stats.map((stat) => (
           <Card key={stat.title} className="relative overflow-hidden">
@@ -156,8 +203,9 @@ export function DashboardPage() {
             </CardHeader>
             <CardContent className="relative">
               <div className="text-2xl font-bold">{isLoading ? '...' : stat.value}</div>
-              <p className="text-sm text-green-600 mt-1 flex items-center gap-1">
-                <TrendingUp className="w-4 h-4" />
+              <p className={`text-sm mt-1 flex items-center gap-1 ${stat.isPositive ? 'text-green-600' : 'text-red-600'}`}>
+                <span className="text-muted-foreground">相对昨日：</span>
+                {stat.isPositive ? <TrendingUp className="w-4 h-4" /> : <TrendingUp className="w-4 h-4 rotate-180" />}
                 {stat.change}
               </p>
             </CardContent>

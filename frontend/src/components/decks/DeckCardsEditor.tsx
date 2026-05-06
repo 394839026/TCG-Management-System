@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Crown, Sparkles, Shield, Sword, BookOpen, Gem, Plus, Search, Minus, Trash2, Package, X, CheckCircle, AlertCircle } from 'lucide-react';
+import { Crown, Sparkles, Shield, Sword, BookOpen, Gem, Plus, Search, Minus, Trash2, Package, X, CheckCircle, AlertCircle, Shuffle } from 'lucide-react';
 import { inventoryService, InventoryItem } from '@/services/inventory';
 
 // 卡牌位置类型
@@ -29,6 +29,7 @@ interface DeckCardsEditorProps {
   onRunesChange: (cards: DeckCard[]) => void;
   onTokensChange: (cards: DeckCard[]) => void;
   selectedGameType?: string;
+  mode?: 'building' | 'collection'; // building: 个人库存，collection: 全部库存/模板
 }
 
 // 验证结果接口
@@ -37,6 +38,164 @@ export interface ValidationResult {
   messages: string[];
   warnings: string[];
 }
+
+// Fisher-Yates 洗牌算法
+const shuffleArray = <T>(array: T[]): T[] => {
+  const result = [...array];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
+};
+
+// 从库存中随机生成合法的符文战场卡组
+const generateRandomRuneDeck = (inventory: InventoryItem[], mode: 'building' | 'collection'): {
+  legend: DeckCard[];
+  mainDeck: DeckCard[];
+  sideDeck: DeckCard[];
+  battlefield: DeckCard[];
+  runes: DeckCard[];
+  tokens: DeckCard[];
+} => {
+  const getAvailableQuantity = (item: InventoryItem): number => {
+    if (mode === 'building') {
+      return item.userQuantity ?? item.quantity ?? 0;
+    }
+    return item.quantity ?? 1;
+  };
+
+  // 筛选各类卡牌
+  const legends = inventory.filter(item => 
+    item.cardProperty === '传奇' && getAvailableQuantity(item) > 0
+  );
+  
+  const mainCards = inventory.filter(item => 
+    ['专属', '法术', '单位', '英雄', '装备'].includes(item.cardProperty || '') &&
+    getAvailableQuantity(item) > 0
+  );
+  
+  const sideCards = inventory.filter(item => 
+    ['专属', '法术', '单位', '英雄', '装备'].includes(item.cardProperty || '') &&
+    getAvailableQuantity(item) > 0
+  );
+  
+  const battlefields = inventory.filter(item => 
+    item.cardProperty === '战场' && getAvailableQuantity(item) > 0
+  );
+  
+  const runes = inventory.filter(item => 
+    item.cardProperty === '符文' && getAvailableQuantity(item) > 0
+  );
+  
+  const tokens = inventory.filter(item => 
+    item.cardProperty === '指示物' && getAvailableQuantity(item) > 0
+  );
+
+  // 生成各部分卡牌
+  const selectedCards = new Map<string, number>();
+  const result: {
+    legend: DeckCard[];
+    mainDeck: DeckCard[];
+    sideDeck: DeckCard[];
+    battlefield: DeckCard[];
+    runes: DeckCard[];
+    tokens: DeckCard[];
+  } = {
+    legend: [],
+    mainDeck: [],
+    sideDeck: [],
+    battlefield: [],
+    runes: [],
+    tokens: []
+  };
+
+  // 1. 传奇：1张
+  if (legends.length > 0) {
+    const shuffledLegends = shuffleArray(legends);
+    const legend = shuffledLegends[0];
+    const quantity = Math.min(1, getAvailableQuantity(legend));
+    result.legend = [{ card: String(legend._id), quantity, slot: 'legend' }];
+    selectedCards.set(String(legend._id), quantity);
+  }
+
+  // 2. 战场：3张（可重复，但同一张最多3张）
+  const shuffledBattlefields = shuffleArray(battlefields);
+  let battlefieldCount = 0;
+  for (const card of shuffledBattlefields) {
+    if (battlefieldCount >= 3) break;
+    const currentUsed = selectedCards.get(String(card._id)) || 0;
+    const available = getAvailableQuantity(card) - currentUsed;
+    if (available > 0) {
+      const maxPossible = Math.min(3 - currentUsed, available, 3 - battlefieldCount);
+      const quantity = Math.min(maxPossible, 3 - battlefieldCount);
+      if (quantity > 0) {
+        result.battlefield.push({ card: String(card._id), quantity, slot: 'battlefield' });
+        selectedCards.set(String(card._id), currentUsed + quantity);
+        battlefieldCount += quantity;
+      }
+    }
+  }
+
+  // 3. 符文：12张（可重复，但同一张最多3张）
+  const shuffledRunes = shuffleArray(runes);
+  let runeCount = 0;
+  for (const card of shuffledRunes) {
+    if (runeCount >= 12) break;
+    const currentUsed = selectedCards.get(String(card._id)) || 0;
+    const available = getAvailableQuantity(card) - currentUsed;
+    if (available > 0) {
+      const maxPossible = Math.min(3 - currentUsed, available, 12 - runeCount);
+      const quantity = Math.min(maxPossible, 12 - runeCount);
+      if (quantity > 0) {
+        result.runes.push({ card: String(card._id), quantity, slot: 'runes' });
+        selectedCards.set(String(card._id), currentUsed + quantity);
+        runeCount += quantity;
+      }
+    }
+  }
+
+  // 4. 主卡组：40张（可重复，但同一张最多3张）
+  const shuffledMain = shuffleArray(mainCards);
+  let mainCount = 0;
+  for (const card of shuffledMain) {
+    if (mainCount >= 40) break;
+    const currentUsed = selectedCards.get(String(card._id)) || 0;
+    const available = getAvailableQuantity(card) - currentUsed;
+    if (available > 0) {
+      const maxPossible = Math.min(3 - currentUsed, available, 40 - mainCount);
+      const quantity = Math.min(maxPossible, 40 - mainCount);
+      if (quantity > 0) {
+        result.mainDeck.push({ card: String(card._id), quantity, slot: 'mainDeck' });
+        selectedCards.set(String(card._id), currentUsed + quantity);
+        mainCount += quantity;
+      }
+    }
+  }
+
+  // 5. 备用卡组：8张（可重复，但同一张最多3张，且与主卡组不重复）
+  const shuffledSide = shuffleArray(sideCards.filter(c => {
+    const used = selectedCards.get(String(c._id)) || 0;
+    return used < 3;
+  }));
+  let sideCount = 0;
+  for (const card of shuffledSide) {
+    if (sideCount >= 8) break;
+    const currentUsed = selectedCards.get(String(card._id)) || 0;
+    const available = getAvailableQuantity(card) - currentUsed;
+    if (available > 0 && currentUsed < 3) {
+      const maxPossible = Math.min(3 - currentUsed, available, 8 - sideCount);
+      const quantity = Math.min(maxPossible, 8 - sideCount);
+      if (quantity > 0) {
+        result.sideDeck.push({ card: String(card._id), quantity, slot: 'sideDeck' });
+        selectedCards.set(String(card._id), currentUsed + quantity);
+        sideCount += quantity;
+      }
+    }
+  }
+
+  return result;
+};
 
 // 符文战场卡组验证
 const validateRuneDeck = (
@@ -276,22 +435,55 @@ export function DeckCardsEditor({
   onBattlefieldChange,
   onRunesChange,
   onTokensChange,
-  selectedGameType
+  selectedGameType,
+  mode = 'building'
 }: DeckCardsEditorProps) {
   const [activeSlot, setActiveSlot] = useState<DeckSlot>(selectedGameType === 'rune' ? 'legend' : 'mainDeck');
   const [searchTerm, setSearchTerm] = useState('');
   const [showInventory, setShowInventory] = useState(false);
   const [inventoryPage, setInventoryPage] = useState(1);
+  const [isGenerating, setIsGenerating] = useState(false);
   const itemsPerPage = 50;
+
+  // 随机生成合法构筑
+  const handleGenerateRandomDeck = async () => {
+    if (selectedGameType !== 'rune' || isLoading) return;
+    
+    setIsGenerating(true);
+    
+    try {
+      const generated = generateRandomRuneDeck(inventory, mode);
+      
+      onLegendChange(generated.legend);
+      onMainDeckChange(generated.mainDeck);
+      onSideDeckChange(generated.sideDeck);
+      onBattlefieldChange(generated.battlefield);
+      onRunesChange(generated.runes);
+      onTokensChange(generated.tokens);
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
   // 搜索时重置分页
   useEffect(() => {
     setInventoryPage(1);
   }, [searchTerm]);
 
+  // 当游戏类型变化时，确保 activeSlot 是有效值
+  useEffect(() => {
+    const validSlots = getSlotList(selectedGameType);
+    if (!validSlots.includes(activeSlot)) {
+      setActiveSlot(validSlots[0]);
+    }
+  }, [selectedGameType, activeSlot]);
+
+  // 根据 mode 选择使用个人库存还是全部模板库存
   const { data: inventoryData, isLoading } = useQuery({
-    queryKey: ['inventory'],
-    queryFn: () => inventoryService.getAll({ limit: 2000 }),
+    queryKey: ['inventory', mode],
+    queryFn: () => mode === 'building' 
+      ? inventoryService.getAll({ limit: 2000 }) // 构筑模式：个人库存
+      : inventoryService.getAllTemplates({ limit: 2000 }), // 卡组模式：全部模板库存
   });
 
   const inventory: InventoryItem[] = inventoryData?.data || [];
@@ -323,21 +515,40 @@ export function DeckCardsEditor({
   };
 
   const filteredInventory = useMemo(() => {
+    // 辅助函数：检查游戏类型是否匹配
+    const matchesGameType = (item: any, targetGameType: string): boolean => {
+      if (!item.gameType) return false;
+      if (Array.isArray(item.gameType)) {
+        return item.gameType.includes(targetGameType);
+      }
+      return item.gameType === targetGameType;
+    };
+
+    // 辅助函数：检查库存是否有效
+    const hasValidQuantity = (item: any): boolean => {
+      // 只有在构筑模式下才过滤库存为0的卡牌
+      if (mode !== 'building') return true;
+      // 在构筑模式下使用 userQuantity（用户实际拥有的数量）
+      return (item.userQuantity ?? item.quantity ?? 0) > 0;
+    };
+
     if (selectedGameType !== 'rune') {
       return inventory.filter(item => 
+        hasValidQuantity(item) &&
         item.itemName.toLowerCase().includes(searchTerm.toLowerCase()) &&
-        (!selectedGameType || item.gameType === selectedGameType)
+        (!selectedGameType || matchesGameType(item, selectedGameType))
       );
     }
 
-    const config = slotConfig[activeSlot as keyof typeof slotConfig];
+    const config = (slotConfig[activeSlot as keyof typeof slotConfig] || slotConfig.mainDeck) as { cardTypes: string[] };
     return inventory.filter(item => {
       const matchesSearch = item.itemName.toLowerCase().includes(searchTerm.toLowerCase());
-      const matchesGame = item.gameType === 'rune';
-      const matchesType = config.cardTypes.length === 0 || config.cardTypes.includes(item.cardProperty || '');
-      return matchesSearch && matchesGame && matchesType;
+      const matchesGame = matchesGameType(item, 'rune');
+      const cardTypes = config.cardTypes as string[];
+      const matchesType = cardTypes.length === 0 || cardTypes.includes(item.cardProperty || '');
+      return hasValidQuantity(item) && matchesSearch && matchesGame && matchesType;
     });
-  }, [inventory, searchTerm, selectedGameType, activeSlot, slotConfig]);
+  }, [inventory, searchTerm, selectedGameType, activeSlot, slotConfig, mode]);
 
   const validationResult = useMemo(() => {
     if (selectedGameType === 'rune' && inventory.length > 0) {
@@ -380,7 +591,7 @@ export function DeckCardsEditor({
   };
 
   const currentSlotCards = getCardsBySlot(activeSlot);
-  const currentConfig = slotConfig[activeSlot as keyof typeof slotConfig];
+  const currentConfig = slotConfig[activeSlot as keyof typeof slotConfig] || slotConfig.mainDeck;
   const Icon = currentConfig.icon;
   const totalCount = currentSlotCards.reduce((sum, c) => sum + c.quantity, 0);
   const isRuneGame = selectedGameType === 'rune';
@@ -394,6 +605,17 @@ export function DeckCardsEditor({
             ⚔️ 符文战场卡组构成 ⚔️
           </h3>
           <p className="text-sm text-gray-500 mt-1">构建您的完美卡组</p>
+          <Button 
+            type="button"
+            variant="premium" 
+            size="sm"
+            className="mt-4 gap-2"
+            onClick={handleGenerateRandomDeck}
+            disabled={isGenerating || isLoading}
+          >
+            <Shuffle className="w-4 h-4" />
+            {isGenerating ? '生成中...' : '随机生成合法构筑'}
+          </Button>
         </div>
       )}
 
@@ -442,7 +664,7 @@ export function DeckCardsEditor({
         // 符文战场6列卡片布局
         <div className="grid grid-cols-6 gap-3">
           {slotList.map((slot) => {
-            const config = slotConfig[slot as keyof typeof slotConfig];
+            const config = slotConfig[slot as keyof typeof slotConfig] || slotConfig.mainDeck;
             const cards = getCardsBySlot(slot);
             const count = cards.reduce((sum, c) => sum + c.quantity, 0);
             const required = config.required;
@@ -452,8 +674,12 @@ export function DeckCardsEditor({
             
             return (
               <button
+                type="button"
                 key={slot}
-                onClick={() => setActiveSlot(slot)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveSlot(slot);
+                }}
                 className={`relative p-3 rounded-xl border-2 transition-all ${
                   isActiveSlot 
                     ? `${config.borderColor} ${config.bgColor} shadow-lg scale-105` 
@@ -497,7 +723,7 @@ export function DeckCardsEditor({
         // 通用游戏2列卡片布局
         <div className="grid grid-cols-2 gap-3">
           {slotList.map((slot) => {
-            const config = slotConfig[slot as keyof typeof slotConfig];
+            const config = slotConfig[slot as keyof typeof slotConfig] || slotConfig.mainDeck;
             const cards = getCardsBySlot(slot);
             const count = cards.reduce((sum, c) => sum + c.quantity, 0);
             const isActiveSlot = slot === activeSlot;
@@ -506,8 +732,12 @@ export function DeckCardsEditor({
             
             return (
               <button
+                type="button"
                 key={slot}
-                onClick={() => setActiveSlot(slot)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveSlot(slot);
+                }}
                 className={`relative p-4 rounded-xl border-2 transition-all ${
                   isActiveSlot 
                     ? `${config.borderColor} ${config.bgColor} shadow-lg scale-105` 
@@ -551,7 +781,10 @@ export function DeckCardsEditor({
             variant="outline" 
             size="lg"
             className="gap-2"
-            onClick={() => setShowInventory(true)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowInventory(true);
+            }}
           >
             <Plus className="w-5 h-5" />
             添加卡牌
@@ -620,7 +853,7 @@ export function DeckCardsEditor({
                           {inventoryItem.cardProperty}
                         </span>
                       )}
-                      <span className="text-xs text-gray-400">{ITEM_TYPE_MAP[inventoryItem.itemType] || inventoryItem.itemType}</span>
+                      <span className="text-xs text-gray-400">{inventoryItem ? (ITEM_TYPE_MAP[inventoryItem.itemType] || inventoryItem.itemType) : '未知'}</span>
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
@@ -629,7 +862,10 @@ export function DeckCardsEditor({
                       variant="outline" 
                       size="icon" 
                       className="h-10 w-10"
-                      onClick={() => updateCardQuantity(index, -1)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateCardQuantity(index, -1);
+                      }}
                     >
                       <Minus className="w-5 h-5" />
                     </Button>
@@ -641,7 +877,10 @@ export function DeckCardsEditor({
                       variant="outline" 
                       size="icon" 
                       className="h-10 w-10"
-                      onClick={() => updateCardQuantity(index, 1)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateCardQuantity(index, 1);
+                      }}
                     >
                       <Plus className="w-5 h-5" />
                     </Button>
@@ -650,7 +889,10 @@ export function DeckCardsEditor({
                       variant="ghost" 
                       size="icon" 
                       className="h-10 w-10 text-red-500 hover:text-red-400 hover:bg-red-50"
-                      onClick={() => removeCard(index)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeCard(index);
+                      }}
                     >
                       <Trash2 className="w-5 h-5" />
                     </Button>
@@ -682,7 +924,10 @@ export function DeckCardsEditor({
                   variant="ghost" 
                   size="icon"
                   className="text-white hover:bg-white/20"
-                  onClick={() => setShowInventory(false)}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowInventory(false);
+                  }}
                 >
                   <X className="w-6 h-6" />
                 </Button>
@@ -714,7 +959,10 @@ export function DeckCardsEditor({
                     {filteredInventory.slice((inventoryPage - 1) * itemsPerPage, inventoryPage * itemsPerPage).map((item) => (
                       <button
                         key={item._id}
-                        onClick={() => addCardToSlot(item)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          addCardToSlot(item);
+                        }}
                         className="flex items-center gap-4 p-4 border-2 border-gray-200 rounded-xl hover:border-purple-400 hover:bg-purple-50 transition-all text-left"
                       >
                         <div className="w-16 h-16 rounded-xl bg-gradient-to-br from-purple-500 via-pink-500 to-red-500 flex items-center justify-center flex-shrink-0">
@@ -741,7 +989,7 @@ export function DeckCardsEditor({
                             )}
                             <span className="text-xs text-gray-400">{ITEM_TYPE_MAP[item.itemType] || item.itemType}</span>
                           </div>
-                          <p className="text-xs text-gray-400 mt-1">库存: {item.quantity}</p>
+                          <p className="text-xs text-gray-400 mt-1">库存: {mode === 'building' ? (item.userQuantity ?? item.quantity) : item.quantity}</p>
                         </div>
                         <Plus className="w-6 h-6 text-purple-500" />
                       </button>
@@ -756,7 +1004,10 @@ export function DeckCardsEditor({
                         variant="outline"
                         size="sm"
                         disabled={inventoryPage === 1}
-                        onClick={() => setInventoryPage(prev => Math.max(1, prev - 1))}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setInventoryPage(prev => Math.max(1, prev - 1));
+                        }}
                       >
                         上一页
                       </Button>
@@ -768,7 +1019,10 @@ export function DeckCardsEditor({
                         variant="outline"
                         size="sm"
                         disabled={inventoryPage >= Math.ceil(filteredInventory.length / itemsPerPage)}
-                        onClick={() => setInventoryPage(prev => Math.min(Math.ceil(filteredInventory.length / itemsPerPage), prev + 1))}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setInventoryPage(prev => Math.min(Math.ceil(filteredInventory.length / itemsPerPage), prev + 1));
+                        }}
                       >
                         下一页
                       </Button>

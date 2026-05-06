@@ -9,6 +9,12 @@ const shopSchema = new mongoose.Schema({
     minlength: [2, '店铺名称至少需要2个字符'],
     maxlength: [100, '店铺名称不能超过100个字符']
   },
+  type: {
+    type: String,
+    enum: ['physical', 'online', 'virtual'],
+    default: 'physical',
+    required: [true, '店铺类型是必填项']
+  },
   description: { 
     type: String, 
     maxlength: [1000, '店铺描述不能超过1000个字符'],
@@ -35,7 +41,7 @@ const shopSchema = new mongoose.Schema({
     },
     role: { 
       type: String, 
-      enum: ['manager', 'cashier', 'staff'], 
+      enum: ['owner', 'operator', 'staff'], 
       default: 'staff'
     },
     hiredAt: { 
@@ -52,6 +58,10 @@ const shopSchema = new mongoose.Schema({
         default: false 
       },
       canViewReports: { 
+        type: Boolean, 
+        default: false 
+      },
+      canManageEmployees: {
         type: Boolean, 
         default: false 
       }
@@ -137,6 +147,48 @@ const shopSchema = new mongoose.Schema({
       default: Date.now 
     }
   },
+  shelves: [{
+    name: {
+      type: String,
+      required: [true, '货架名称是必填项'],
+      trim: true,
+      minlength: [1, '货架名称至少需要1个字符'],
+      maxlength: [50, '货架名称不能超过50个字符']
+    },
+    description: {
+      type: String,
+      maxlength: [200, '货架描述不能超过200个字符'],
+      default: ''
+    },
+    capacity: {
+      type: Number,
+      default: 0,
+      min: [0, '容量不能为负数']
+    },
+    items: [{
+      inventoryItem: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'ShopInventoryItem'
+      },
+      quantity: {
+        type: Number,
+        default: 1,
+        min: [1, '数量至少为1']
+      },
+      addedAt: {
+        type: Date,
+        default: Date.now
+      }
+    }],
+    createdAt: {
+      type: Date,
+      default: Date.now
+    },
+    updatedAt: {
+      type: Date,
+      default: Date.now
+    }
+  }],
   settings: {
     isPublic: { 
       type: Boolean, 
@@ -161,10 +213,5 @@ const shopSchema = new mongoose.Schema({
 shopSchema.index({ owner: 1 });
 shopSchema.index({ 'employees.user': 1 });
 shopSchema.index({ name: 'text' });
-
-// 更新时间戳
-shopSchema.pre('save', function() {
-  this.updatedAt = new Date();
-});
 
 module.exports = mongoose.model('Shop', shopSchema);

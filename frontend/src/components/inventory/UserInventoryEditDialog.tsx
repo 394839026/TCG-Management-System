@@ -17,6 +17,7 @@ interface UserInventoryEditDialogProps {
 export function UserInventoryEditDialog({ open, onClose, item }: UserInventoryEditDialogProps) {
   const [quantity, setQuantity] = useState(0);
   const [value, setValue] = useState(0);
+  const [acquisitionSource, setAcquisitionSource] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const queryClient = useQueryClient();
 
@@ -24,6 +25,7 @@ export function UserInventoryEditDialog({ open, onClose, item }: UserInventoryEd
     if (open && item) {
       setQuantity(item.userQuantity ?? item.quantity ?? 0);
       setValue(item.userValue ?? item.value ?? 0);
+      setAcquisitionSource(item.acquisitionSource ?? '');
     }
   }, [open, item]);
 
@@ -31,7 +33,7 @@ export function UserInventoryEditDialog({ open, onClose, item }: UserInventoryEd
     setIsLoading(true);
     try {
       const itemId = item._id?.toString() || String(item.id);
-      await inventoryService.updateUserInventory(itemId, { quantity, value });
+      await inventoryService.updateUserInventory(itemId, { quantity, value, acquisitionSource });
       toast.success('更新成功');
       queryClient.invalidateQueries({ queryKey: ['inventory'], exact: false });
       queryClient.invalidateQueries({ queryKey: ['inventoryStats'] });
@@ -47,6 +49,7 @@ export function UserInventoryEditDialog({ open, onClose, item }: UserInventoryEd
   const handleClose = () => {
     setQuantity(item.userQuantity ?? item.quantity);
     setValue(item.userValue ?? item.value);
+    setAcquisitionSource(item.acquisitionSource ?? '');
     onClose();
   };
 
@@ -85,6 +88,17 @@ export function UserInventoryEditDialog({ open, onClose, item }: UserInventoryEd
               step="0.01"
               value={value}
               onChange={(e) => setValue(Math.max(0, parseFloat(e.target.value) || 0))}
+              className="w-full"
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="acquisitionSource">来源</Label>
+            <Input
+              id="acquisitionSource"
+              placeholder="请输入来源..."
+              value={acquisitionSource}
+              onChange={(e) => setAcquisitionSource(e.target.value)}
               className="w-full"
             />
           </div>

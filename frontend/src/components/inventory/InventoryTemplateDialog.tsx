@@ -18,8 +18,6 @@ interface InventoryTemplateDialogProps {
 
 const GAME_TYPES = [
   { id: 'rune', name: '符文战场', color: 'bg-red-600' },
-  { id: 'digimon', name: '数码宝贝', color: 'bg-blue-600' },
-  { id: 'pokemon', name: '宝可梦', color: 'bg-green-600' },
   { id: 'shadowverse-evolve', name: '影之诗进化对决', color: 'bg-purple-600' },
 ]
 
@@ -121,9 +119,9 @@ export function InventoryTemplateDialog({ open, onOpenChange, item }: InventoryT
   }, [item, open])
 
   const createMutation = useMutation({
-    mutationFn: (data: Partial<InventoryItem>) => inventoryService.create(data),
+    mutationFn: (data: Partial<InventoryItem>) => inventoryService.createTemplate(data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-templates'] })
       queryClient.invalidateQueries({ queryKey: ['inventoryStats'] })
       toast.success('模板创建成功')
       onOpenChange(false)
@@ -138,7 +136,7 @@ export function InventoryTemplateDialog({ open, onOpenChange, item }: InventoryT
     mutationFn: ({ id, data }: { id: string; data: Partial<InventoryItem> }) =>
       inventoryService.update(id, data),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-templates'] })
       queryClient.invalidateQueries({ queryKey: ['inventoryStats'] })
       toast.success('模板更新成功')
       onOpenChange(false)

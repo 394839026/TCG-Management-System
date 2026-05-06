@@ -37,7 +37,7 @@ async function sendWelcomeNotifications() {
           user._id,
           'welcome',
           '🎉 欢迎加入！',
-          `亲爱的 ${user.username}，欢迎来到卡牌综合管理系统！开始探索你的卡牌收藏之旅吧！`,
+          `亲爱的 ${user.username}，欢迎来到星沉智库！开始探索你的卡牌收藏之旅吧！`,
           { username: user.username }
         );
       } else {

@@ -12,8 +12,6 @@ import { InventoryTemplateDialog } from '@/components/inventory/InventoryTemplat
 
 const GAME_TYPES = [
   { id: 'rune', name: '符文战场', color: 'bg-red-600' },
-  { id: 'digimon', name: '数码宝贝', color: 'bg-blue-600' },
-  { id: 'pokemon', name: '宝可梦', color: 'bg-green-600' },
   { id: 'shadowverse-evolve', name: '影之诗进化对决', color: 'bg-purple-600' },
 ]
 
@@ -75,7 +73,7 @@ export function InventoryDataManagementPage() {
   }, [selectedGame])
 
   const queryKey = useMemo(() => [
-    'inventory',
+    'inventory-templates',
     debouncedSearch,
     page,
     selectedGame,
@@ -83,18 +81,17 @@ export function InventoryDataManagementPage() {
 
   const { data: inventoryData, isLoading } = useQuery({
     queryKey,
-    queryFn: () => inventoryService.getAll({
+    queryFn: () => inventoryService.getAllTemplates({
       search: debouncedSearch,
       page,
       gameType: selectedGame || undefined,
-      showZeroQuantity: 'true',
     }),
   })
 
   const importMutation = useMutation({
-    mutationFn: (file: File) => inventoryService.importExcel(file),
+    mutationFn: (file: File) => inventoryService.importExcel(file, true),
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'], exact: false })
+      queryClient.invalidateQueries({ queryKey: ['inventory-templates'], exact: false })
       queryClient.invalidateQueries({ queryKey: ['inventoryStats'] })
       toast.success('导入成功')
       setImporting(false)
@@ -135,10 +132,10 @@ export function InventoryDataManagementPage() {
   }
 
   const clearMutation = useMutation({
-    mutationFn: () => inventoryService.clearAll(),
+    mutationFn: () => inventoryService.clearAllTemplates(),
     onSuccess: (data) => {
       toast.success(data.message || '数据已清空')
-      queryClient.invalidateQueries({ queryKey: ['inventory'], exact: false })
+      queryClient.invalidateQueries({ queryKey: ['inventory-templates'], exact: false })
       queryClient.invalidateQueries({ queryKey: ['inventoryStats'] })
       setClearing(false)
     },
@@ -157,7 +154,7 @@ export function InventoryDataManagementPage() {
   }
 
   const exportMutation = useMutation({
-    mutationFn: () => inventoryService.exportExcel(),
+    mutationFn: () => inventoryService.exportExcel(true),
     onSuccess: (data) => {
       const url = window.URL.createObjectURL(new Blob([data]))
       const link = document.createElement('a')
@@ -189,7 +186,7 @@ export function InventoryDataManagementPage() {
       return inventoryService.delete(id)
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory-templates'] })
       queryClient.invalidateQueries({ queryKey: ['inventoryStats'] })
       toast.success('模板已删除')
     },
@@ -435,7 +432,7 @@ export function InventoryDataManagementPage() {
             const gameType = GAME_TYPES.find(g => g.id === item.gameType)
             return (
             <Card key={item.id} className="overflow-hidden card-hover group">
-              <div className={`aspect-[3/4] bg-gradient-to-br ${item.gameType === 'digimon' ? 'from-blue-500/10 to-blue-300/10' : item.gameType === 'rune' ? 'from-red-500/10 to-red-300/10' : item.gameType === 'pokemon' ? 'from-green-500/10 to-green-300/10' : item.gameType === 'shadowverse-evolve' ? 'from-purple-500/10 to-purple-300/10' : 'from-primary/10 to-accent/10'} relative overflow-hidden`}>
+              <div className={`aspect-[3/4] bg-gradient-to-br ${item.gameType === 'rune' ? 'from-red-500/10 to-red-300/10' : item.gameType === 'shadowverse-evolve' ? 'from-purple-500/10 to-purple-300/10' : 'from-primary/10 to-accent/10'} relative overflow-hidden`}>
                 {item.images && item.images.length > 0 ? (
                   <img
                     src={item.images[0]}

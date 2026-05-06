@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { ArrowLeft, Users, Crown, X, Search, Send, Boxes, Edit2, Check, UserPlus, Coins, Clock, DollarSign, PlusCircle, Gift, Key } from 'lucide-react'
+import { ArrowLeft, Users, Crown, X, Search, Send, Boxes, Edit2, Check, UserPlus, Coins, Clock, DollarSign, PlusCircle, Gift, Key, MessageSquare, UsersRound } from 'lucide-react';
 import { teamService, teamInventoryService, Team, DonationRecord, InvestmentRecord } from '@/services/api'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
@@ -64,6 +64,17 @@ export function TeamDetailPage() {
     },
     onError: (error: any) => {
       toast.error(error?.response?.data?.message || '退出失败');
+    },
+  });
+
+  const createGroupChatMutation = useMutation({
+    mutationFn: () => teamService.createGroupChat(id!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['team', id] });
+      toast.success('群聊创建成功！');
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || '群聊创建失败');
     },
   });
 
@@ -294,7 +305,7 @@ export function TeamDetailPage() {
   })
 
   const team: Team = teamData?.data || {} as Team;
-  const isOwner = (typeof team.owner === 'object' && team.owner?._id) ? String(team.owner._id) === String(user?._id) : String(team.owner) === String(user?._id);
+  const isOwner = String(team.owner) === String(user?._id);
 
   const memberRoleConfig: Record<string, { label: string; color: string }> = {
     owner: { label: '队长', color: 'bg-yellow-500/20 text-yellow-500' },
@@ -351,6 +362,27 @@ export function TeamDetailPage() {
           <Badge className="px-3 py-1" style={{ background: 'hsl(220 90% 56% / 0.2)', color: 'hsl(220 90% 70%)' }}>
             {team.settings?.isPublic ? '公开战队' : '私有战队'}
           </Badge>
+          {team.groupChat ? (
+            <Button 
+              variant="default" 
+              size="sm"
+              onClick={() => navigate('/messages?tab=group-chats')}
+              style={{ background: 'linear-gradient(135deg, hsl(220 90% 56%), hsl(220 85% 65%))' }}
+            >
+              <MessageSquare className="w-4 h-4 mr-2" />
+              进入群聊
+            </Button>
+          ) : isOwner && (
+            <Button 
+              variant="default" 
+              size="sm"
+              onClick={() => createGroupChatMutation.mutate()}
+              disabled={createGroupChatMutation.isPending}
+            >
+              <UsersRound className="w-4 h-4 mr-2" />
+              创建群聊
+            </Button>
+          )}
           {!isOwner && (
             <Button 
               variant="outline" 

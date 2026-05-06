@@ -10,21 +10,10 @@ import { useAuth } from '@/contexts/AuthContext'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-
-interface CardType {
-  _id: string
-  name: string
-  gameType: string
-  cardProperty?: string
-  description?: string
-  createdAt: string
-  updatedAt: string
-}
+import { CardType, cardTypeService } from '@/services/api'
 
 const GAME_TYPES = [
   { id: 'rune', name: '符文战场' },
-  { id: 'digimon', name: '数码宝贝' },
-  { id: 'pokemon', name: '宝可梦' },
   { id: 'shadowverse-evolve', name: '影之诗进化对决' },
 ]
 
@@ -61,28 +50,12 @@ export function CardTypeManagementPage() {
   const isSuperAdmin = user?.role === 'superadmin'
 
   const { data: typesData, isLoading } = useQuery({
-    queryKey: ['cardTypes', searchTerm],
-    queryFn: async () => {
-      const response = await fetch('/api/card-types', {
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      })
-      const result = await response.json()
-      return result
-    },
+    queryKey: ['cardTypes', searchTerm, gameTypeFilter, cardPropertyFilter],
+    queryFn: () => cardTypeService.getAll({ search: searchTerm, gameType: gameTypeFilter, cardProperty: cardPropertyFilter }),
   })
 
   const createMutation = useMutation({
-    mutationFn: async (data: { name: string; gameType: string; cardProperty?: string; description?: string }) => {
-      const response = await fetch('/api/card-types', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      })
-      return response.json()
-    },
+    mutationFn: cardTypeService.create,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cardTypes'] })
       toast.success('卡牌类型创建成功')
@@ -95,17 +68,7 @@ export function CardTypeManagementPage() {
   })
 
   const updateMutation = useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: { name?: string; gameType?: string; cardProperty?: string; description?: string } }) => {
-      const response = await fetch(`/api/card-types/${id}`, {
-        method: 'PUT',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(data),
-      })
-      return response.json()
-    },
+    mutationFn: ({ id, data }: { id: string; data: any }) => cardTypeService.update(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cardTypes'] })
       toast.success('卡牌类型更新成功')
@@ -118,43 +81,13 @@ export function CardTypeManagementPage() {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: async (id: string) => {
-      const response = await fetch(`/api/card-types/${id}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${localStorage.getItem('token')}` },
-      })
-      return response.json()
-    },
+    mutationFn: cardTypeService.delete,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cardTypes'] })
       toast.success('卡牌类型已删除')
     },
     onError: () => {
       toast.error('删除失败')
-    },
-  })
-
-  const importMutation = useMutation({
-    mutationFn: async (formData: FormData) => {
-      const response = await fetch('/api/card-types/import', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${localStorage.getItem('token')}`,
-        },
-        body: formData,
-      })
-      return response.json()
-    },
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ['cardTypes'] })
-      toast.success(result.message)
-      setImportDialogOpen(false)
-      if (fileInputRef.current) {
-        fileInputRef.current.value = ''
-      }
-    },
-    onError: () => {
-      toast.error('导入失败')
     },
   })
 
@@ -188,85 +121,7 @@ export function CardTypeManagementPage() {
     }
   }
 
-  const handleImport = (e: React.FormEvent) => {
-    e.preventDefault()
-    const file = (e.target as HTMLFormElement).file?.files?.[0]
-    if (file) {
-      const formData = new FormData()
-      formData.append('file', file)
-      importMutation.mutate(formData)
-    }
-  }
-
-  const handleDownloadTemplate = async () => {
-    try {
-      const response = await fetch('/api/card-types/template', {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      })
-      
-      if (!response.ok) {
-        throw new Error('下载失败')
-      }
-      
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = 'card_type_template.xlsx'
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-      
-      toast.success('下载成功')
-    } catch (error) {
-      console.error(error)
-      toast.error('下载失败')
-    }
-  }
-
-  const handleExport = async () => {
-    try {
-      const exportUrl = gameTypeFilter 
-        ? `/api/card-types/export?gameType=${gameTypeFilter}`
-        : '/api/card-types/export'
-      
-      const response = await fetch(exportUrl, {
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('token')}`
-        }
-      })
-      
-      if (!response.ok) {
-        throw new Error('导出失败')
-      }
-      
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = `card_types_export_${new Date().toISOString().split('T')[0]}.xlsx`
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-      
-      toast.success('导出成功')
-    } catch (error) {
-      console.error(error)
-      toast.error('导出失败')
-    }
-  }
-
   const types: CardType[] = typesData?.data || []
-  const filteredTypes = types.filter(type => {
-    const matchesSearch = type.name.toLowerCase().includes(searchTerm.toLowerCase())
-    const matchesGameType = !gameTypeFilter || type.gameType === gameTypeFilter
-    const matchesCardProperty = !cardPropertyFilter || type.cardProperty === cardPropertyFilter
-    return matchesSearch && matchesGameType && matchesCardProperty
-  })
 
   return (
     <div className="space-y-6">
@@ -276,25 +131,11 @@ export function CardTypeManagementPage() {
           <p className="text-muted-foreground mt-1">管理数据库中的所有卡牌类型</p>
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" onClick={handleExport}>
-            <Download className="w-4 h-4 mr-2" />
-            导出
-          </Button>
           {isSuperAdmin && (
-            <>
-              <Button variant="outline" onClick={handleDownloadTemplate}>
-                <Download className="w-4 h-4 mr-2" />
-                下载模板
-              </Button>
-              <Button variant="outline" onClick={() => setImportDialogOpen(true)}>
-                <Upload className="w-4 h-4 mr-2" />
-                导入卡牌类型
-              </Button>
-              <Button variant="premium" onClick={() => { setEditingType(null); setFormData({ name: '', gameType: '', cardProperty: '无', description: '' }); setFormOpen(true) }}>
-                <Plus className="w-4 h-4 mr-2" />
-                添加卡牌类型
-              </Button>
-            </>
+            <Button variant="premium" onClick={() => { setEditingType(null); setFormData({ name: '', gameType: '', cardProperty: '无', description: '' }); setFormOpen(true) }}>
+              <Plus className="w-4 h-4 mr-2" />
+              添加卡牌类型
+            </Button>
           )}
         </div>
       </div>
@@ -363,7 +204,7 @@ export function CardTypeManagementPage() {
         <div className="flex justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
         </div>
-      ) : filteredTypes.length === 0 ? (
+      ) : types.length === 0 ? (
         <Card>
           <CardContent className="py-12 text-center">
             <p className="text-muted-foreground">暂无卡牌类型</p>
@@ -390,7 +231,7 @@ export function CardTypeManagementPage() {
                 </tr>
               </thead>
               <tbody>
-                {filteredTypes.map((type) => (
+                {types.map((type) => (
                   <tr key={type._id} className="border-t hover:bg-muted/30 transition-colors">
                     <td className="p-4 font-medium">{type.name}</td>
                     <td className="p-4">
@@ -475,7 +316,7 @@ export function CardTypeManagementPage() {
                     id="cardProperty"
                     value={formData.cardProperty}
                     onChange={(e) => setFormData({ ...formData, cardProperty: e.target.value })}
-                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                    className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
                   >
                     {CARD_PROPERTIES.map((property) => (
                       <option key={property.id} value={property.id}>
@@ -500,39 +341,6 @@ export function CardTypeManagementPage() {
             <DialogFooter>
               <Button variant="outline" onClick={() => setFormOpen(false)}>取消</Button>
               <Button type="submit">保存</Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
-      </Dialog>
-
-      <Dialog open={importDialogOpen} onOpenChange={setImportDialogOpen}>
-        <DialogContent className="sm:max-w-[425px]">
-          <form onSubmit={handleImport}>
-            <DialogHeader>
-              <DialogTitle>导入卡牌类型</DialogTitle>
-              <DialogDescription>
-                上传Excel文件批量导入卡牌类型
-              </DialogDescription>
-            </DialogHeader>
-            <div className="grid gap-4 py-4">
-              <div className="grid gap-2">
-                <Label htmlFor="file">选择文件</Label>
-                <input
-                  ref={fileInputRef}
-                  id="file"
-                  type="file"
-                  accept=".xlsx,.xls"
-                  className="w-full p-3 border rounded-md"
-                  required
-                />
-              </div>
-              <p className="text-sm text-muted-foreground">
-                支持 .xlsx 和 .xls 格式的Excel文件，请先下载模板查看格式要求
-              </p>
-            </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setImportDialogOpen(false)}>取消</Button>
-              <Button type="submit">导入</Button>
             </DialogFooter>
           </form>
         </DialogContent>

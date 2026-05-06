@@ -114,8 +114,10 @@ export function TradeFormDialog({ open, onOpenChange, listing }: TradeFormDialog
       toast.success('交易发布成功')
       onOpenChange(false)
     },
-    onError: () => {
-      toast.error('发布失败')
+    onError: (error: any) => {
+      const errorMsg = error.response?.data?.message || error.response?.data?.errors?.[0]?.msg || error.message || '发布失败'
+      console.error('创建订单失败:', error)
+      toast.error(errorMsg)
     },
   })
 
@@ -127,8 +129,10 @@ export function TradeFormDialog({ open, onOpenChange, listing }: TradeFormDialog
       toast.success('交易更新成功')
       onOpenChange(false)
     },
-    onError: () => {
-      toast.error('更新失败')
+    onError: (error: any) => {
+      const errorMsg = error.response?.data?.message || error.response?.data?.errors?.[0]?.msg || error.message || '更新失败'
+      console.error('更新订单失败:', error)
+      toast.error(errorMsg)
     },
   })
 

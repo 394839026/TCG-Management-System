@@ -9,7 +9,7 @@ const notificationSchema = new mongoose.Schema({
   },
   type: {
     type: String,
-    enum: ['welcome', 'friend_request', 'friend_accepted', 'system', 'trade'],
+    enum: ['welcome', 'friend_request', 'friend_accepted', 'system', 'trade', 'order_created', 'order_cancelled', 'order_confirmed', 'order_completed', 'group_invite'],
     default: 'system',
   },
   title: {

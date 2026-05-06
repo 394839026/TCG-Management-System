@@ -1,11 +1,15 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
-import { Sparkles, Gift, History, Coins, Zap, Star, Crown, Gem, Award, Shuffle, X, RefreshCw, Package, Layers, Check, PartyPopper } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Sparkles, Gift, Coins, Zap, Star, Crown, Gem, Award, X, RefreshCw, Package, Layers, Check, PartyPopper } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { inventoryService, InventoryItem } from '@/services/inventory';
+import { useAuth } from '@/contexts/AuthContext';
+import { gachaService, gachaProbabilityService } from '@/services/api';
+import { toast } from 'sonner';
 
 interface GachaCard {
   id: string;
@@ -26,22 +30,52 @@ const GAME_VERSIONS: Record<string, { id: string; name: string }[]> = {
   ],
 };
 
+const GAME_TYPE_NAME_MAP: Record<string, string> = {
+  'rune': '符文战场',
+  'shadowverse-evolve': '影之诗进化对决',
+};
+
+const VERSION_NAME_MAP: Record<string, string> = {
+  'OGN': '起源',
+  'SFD': '铸魂试炼',
+  'UNL': '破限',
+  'mixed': '混池',
+};
+
 const RARITY_CONFIG: Record<string, { name: string; color: string; bgColor: string; borderColor: string; probability: number; glowColor: string }> = {
   N: { name: '普通', color: 'text-gray-600', bgColor: 'bg-gray-100', borderColor: 'border-gray-300', probability: 0.5, glowColor: '' },
   N_FOIL: { name: '普通（闪）', color: 'text-gray-600', bgColor: 'bg-gray-100', borderColor: 'border-gray-300', probability: 0.05, glowColor: 'shadow-gray-400/50' },
-  U: { name: '不凡', color: 'text-blue-600', bgColor: 'bg-blue-100', borderColor: 'border-blue-400', probability: 0.25, glowColor: '' },
-  U_FOIL: { name: '不凡（闪）', color: 'text-blue-600', bgColor: 'bg-blue-100', borderColor: 'border-blue-400', probability: 0.03, glowColor: 'shadow-blue-400/50' },
-  R: { name: '稀有', color: 'text-purple-600', bgColor: 'bg-purple-100', borderColor: 'border-purple-400', probability: 0.1, glowColor: 'shadow-purple-400/30' },
-  E: { name: '史诗', color: 'text-yellow-600', bgColor: 'bg-yellow-100', borderColor: 'border-yellow-400', probability: 0.05, glowColor: 'shadow-yellow-400/40' },
-  AA: { name: '异画', color: 'text-red-600', bgColor: 'bg-red-100', borderColor: 'border-red-400', probability: 0.015, glowColor: 'shadow-red-400/50' },
-  AA_SIGN: { name: '异画（签字）', color: 'text-red-600', bgColor: 'bg-red-100', borderColor: 'border-red-400', probability: 0.003, glowColor: 'shadow-red-500/60' },
-  AA_ULTIMATE: { name: '异画（终极超编）', color: 'text-red-600', bgColor: 'bg-red-100', borderColor: 'border-red-400', probability: 0.002, glowColor: 'shadow-red-500/70' },
+  U: { name: '不凡', color: 'text-blue-300', bgColor: 'bg-blue-100', borderColor: 'border-blue-400', probability: 0.25, glowColor: '' },
+  U_FOIL: { name: '不凡（闪）', color: 'text-blue-300', bgColor: 'bg-blue-100', borderColor: 'border-blue-400', probability: 0.03, glowColor: 'shadow-blue-400/50' },
+  R: { name: '稀有', color: 'text-purple-300', bgColor: 'bg-purple-100', borderColor: 'border-purple-400', probability: 0.1, glowColor: 'shadow-purple-400/30' },
+  E: { name: '史诗', color: 'text-yellow-300', bgColor: 'bg-yellow-100', borderColor: 'border-yellow-400', probability: 0.05, glowColor: 'shadow-yellow-400/40' },
+  AA: { name: '异画', color: 'text-red-300', bgColor: 'bg-red-100', borderColor: 'border-red-400', probability: 0.015, glowColor: 'shadow-red-400/50' },
+  AA_SIGN: { name: '异画（签字）', color: 'text-red-300', bgColor: 'bg-red-100', borderColor: 'border-red-400', probability: 0.003, glowColor: 'shadow-red-500/60' },
+  AA_ULTIMATE: { name: '异画（终极超编）', color: 'text-red-300', bgColor: 'bg-red-100', borderColor: 'border-red-400', probability: 0.002, glowColor: 'shadow-red-500/70' },
   common: { name: '普通', color: 'text-gray-600', bgColor: 'bg-gray-100', borderColor: 'border-gray-300', probability: 0.5, glowColor: '' },
-  uncommon: { name: '不凡', color: 'text-blue-600', bgColor: 'bg-blue-100', borderColor: 'border-blue-400', probability: 0.3, glowColor: '' },
-  rare: { name: '稀有', color: 'text-purple-600', bgColor: 'bg-purple-100', borderColor: 'border-purple-400', probability: 0.15, glowColor: 'shadow-purple-400/30' },
-  super_rare: { name: '超稀有', color: 'text-yellow-600', bgColor: 'bg-yellow-100', borderColor: 'border-yellow-400', probability: 0.035, glowColor: 'shadow-yellow-400/40' },
-  ultra_rare: { name: '极稀有', color: 'text-orange-600', bgColor: 'bg-orange-100', borderColor: 'border-orange-400', probability: 0.01, glowColor: 'shadow-orange-400/50' },
-  secret_rare: { name: '秘密稀有', color: 'text-pink-600', bgColor: 'bg-pink-100', borderColor: 'border-pink-400', probability: 0.005, glowColor: 'shadow-pink-400/60' },
+  uncommon: { name: '不凡', color: 'text-blue-300', bgColor: 'bg-blue-100', borderColor: 'border-blue-400', probability: 0.3, glowColor: '' },
+  rare: { name: '稀有', color: 'text-purple-300', bgColor: 'bg-purple-100', borderColor: 'border-purple-400', probability: 0.15, glowColor: 'shadow-purple-400/30' },
+  super_rare: { name: '超稀有', color: 'text-yellow-300', bgColor: 'bg-yellow-100', borderColor: 'border-yellow-400', probability: 0.035, glowColor: 'shadow-yellow-400/40' },
+  ultra_rare: { name: '极稀有', color: 'text-orange-300', bgColor: 'bg-orange-100', borderColor: 'border-orange-400', probability: 0.01, glowColor: 'shadow-orange-400/50' },
+  secret_rare: { name: '秘密稀有', color: 'text-pink-300', bgColor: 'bg-pink-100', borderColor: 'border-pink-400', probability: 0.005, glowColor: 'shadow-pink-400/60' },
+};
+
+const RARITY_ICONS: Record<string, React.ReactNode> = {
+  N: <Star className="w-3 h-3" />,
+  N_FOIL: <Sparkles className="w-3 h-3" />,
+  U: <Star className="w-3 h-3" />,
+  U_FOIL: <Sparkles className="w-3 h-3" />,
+  R: <Gem className="w-3 h-3" />,
+  E: <Crown className="w-3 h-3" />,
+  AA: <Award className="w-3 h-3" />,
+  AA_SIGN: <Award className="w-3 h-3" />,
+  AA_ULTIMATE: <Award className="w-3 h-3" />,
+  common: <Star className="w-3 h-3" />,
+  uncommon: <Star className="w-3 h-3" />,
+  rare: <Gem className="w-3 h-3" />,
+  super_rare: <Crown className="w-3 h-3" />,
+  ultra_rare: <Award className="w-3 h-3" />,
+  secret_rare: <Sparkles className="w-3 h-3" />,
 };
 
 const PACK_CONFIG = [
@@ -55,10 +89,6 @@ const RARITY_GROUPS = {
   RARE_AND_ABOVE: ['R', 'rare', 'E', 'super_rare', 'ultra_rare', 'secret_rare', 'AA', 'AA_SIGN', 'AA_ULTIMATE'],
 };
 
-const getRarityConfig = (rarity: string) => {
-  return RARITY_CONFIG[rarity] || { name: rarity, color: 'text-gray-600', bgColor: 'bg-gray-100', borderColor: 'border-gray-300', probability: 0.1, glowColor: '' };
-};
-
 interface DrawResult {
   card: GachaCard;
   isNew: boolean;
@@ -69,9 +99,6 @@ export function GachaPage() {
   const [selectedGame, setSelectedGame] = useState('rune');
   const [selectedVersion, setSelectedVersion] = useState<string>('');
   const [isMixedPool, setIsMixedPool] = useState(false);
-  const [coins, setCoins] = useState(() => {
-    return parseInt(localStorage.getItem('gacha_coins') || '1000', 10);
-  });
   const [isOpening, setIsOpening] = useState(false);
   const [currentDraws, setCurrentDraws] = useState<DrawResult[]>([]);
   const [drawHistory, setDrawHistory] = useState<DrawResult[]>([]);
@@ -81,16 +108,106 @@ export function GachaPage() {
   const [selectedPack, setSelectedPack] = useState<string>('');
   const [openResultDialog, setOpenResultDialog] = useState(false);
   const [historyViewMode, setHistoryViewMode] = useState<'grid' | 'list'>('grid');
+  const [showGift, setShowGift] = useState(false);
+  const [hasClaimedGift, setHasClaimedGift] = useState(false);
+  const [showGiftDialog, setShowGiftDialog] = useState(false);
+  const [giftPosition, setGiftPosition] = useState({ x: 0, y: 0 });
+  const [isClaimingGift, setIsClaimingGift] = useState(false);
 
+  const { user, setUser } = useAuth();
+  const coins = user?.coins || 0;
   const currentGameVersions = GAME_VERSIONS[selectedGame] || [];
+  const queryClient = useQueryClient();
 
-  const updateCoins = (updater: (prev: number) => number) => {
-    setCoins(prev => {
-      const newValue = updater(prev);
-      localStorage.setItem('gacha_coins', String(newValue));
-      return newValue;
-    });
+  const { data: probabilityData } = useQuery({
+    queryKey: ['gachaProbability'],
+    queryFn: gachaProbabilityService.getActiveConfig,
+  });
+
+  const currentRarityConfig = useMemo(() => {
+    const config: Record<string, { name: string; color: string; bgColor: string; borderColor: string; probability: number; glowColor: string }> = { ...RARITY_CONFIG };
+    
+    if (probabilityData?.data?.rarities) {
+      probabilityData.data.rarities.forEach((rarity: any) => {
+        config[rarity.rarityId] = {
+          name: rarity.rarityName,
+          color: rarity.color,
+          bgColor: rarity.bgColor,
+          borderColor: rarity.borderColor,
+          probability: rarity.probability,
+          glowColor: rarity.glowColor
+        };
+      });
+    }
+    
+    return config;
+  }, [probabilityData]);
+
+  const getRarityConfig = (rarity: string) => {
+    return currentRarityConfig[rarity] || { name: rarity, color: 'text-gray-600', bgColor: 'bg-gray-100', borderColor: 'border-gray-300', probability: 0.1, glowColor: '' };
   };
+
+  const updateCoinsInAuth = useCallback(async (newCoins: number) => {
+    if (user && setUser) {
+      const updatedUser = { ...user, coins: newCoins };
+      setUser(updatedUser);
+    }
+  }, [user, setUser]);
+
+  const giveDailyReward = useCallback(async () => {
+    const lastCheckIn = localStorage.getItem('gacha_last_check_in');
+    const today = new Date().toDateString();
+    
+    if (lastCheckIn !== today) {
+      try {
+        const response = await gachaService.addCoins(1000);
+        if (response.success) {
+          updateCoinsInAuth(response.data.coins);
+          localStorage.setItem('gacha_last_check_in', today);
+          toast.success('每日签到成功，获得1000金币！');
+        }
+      } catch (error) {
+        console.error('签到失败:', error);
+      }
+    }
+  }, [updateCoinsInAuth]);
+
+  const fetchGiftStatus = useCallback(async () => {
+    try {
+      const response = await gachaService.getGiftStatus();
+      if (response.success) {
+        setShowGift(response.data.showGift);
+        setHasClaimedGift(response.data.hasClaimedWithin24h);
+        
+        if (response.data.showGift && !response.data.hasClaimedWithin24h) {
+          setGiftPosition({
+            x: Math.random() * 80 + 10,
+            y: Math.random() * 60 + 20
+          });
+        }
+      }
+    } catch (error) {
+      console.error('获取礼物状态失败:', error);
+    }
+  }, []);
+
+  const claimGift = useCallback(async () => {
+    setIsClaimingGift(true);
+    try {
+      const response = await gachaService.claimGift();
+      if (response.success) {
+        updateCoinsInAuth(response.data.coins);
+        setShowGiftDialog(true);
+        setHasClaimedGift(true);
+        setShowGift(false);
+      }
+    } catch (error) {
+      console.error('领取礼物失败:', error);
+      toast.error('领取失败，请稍后重试');
+    } finally {
+      setIsClaimingGift(false);
+    }
+  }, [updateCoinsInAuth]);
 
   const { data: inventoryData, isLoading, refetch } = useQuery({
     queryKey: ['gacha-cards', selectedGame, selectedVersion, isMixedPool],
@@ -102,9 +219,7 @@ export function GachaPage() {
       if (!isMixedPool && selectedVersion) {
         params.version = selectedVersion;
       }
-      console.log('[DEBUG Gacha] Request params:', params);
-      const result = await inventoryService.getAll(params);
-      console.log('[DEBUG Gacha] Response:', { total: result.total, dataLength: result.data?.length || 0, fullResponse: result });
+      const result = await inventoryService.getAllTemplates(params);
       return result;
     },
     refetchOnWindowFocus: true,
@@ -117,11 +232,11 @@ export function GachaPage() {
     setIsMixedPool(false);
   }, [selectedGame]);
 
-  const cardPool: GachaCard[] = useCallback(() => {
+  const cardPool: GachaCard[] = useMemo(() => {
     if (!inventoryData?.data) return [];
     return inventoryData.data.map((item: InventoryItem) => ({
       id: String(item._id),
-      name: item.itemName,
+      name: item.itemName || item.name || '未知卡牌',
       rarity: item.rarity || 'N',
       type: item.cardProperty || item.itemType,
       description: item.description || '暂无描述',
@@ -132,13 +247,9 @@ export function GachaPage() {
   }, [inventoryData]);
 
   useEffect(() => {
-    const lastCheckIn = localStorage.getItem('gacha_last_check_in');
-    const today = new Date().toDateString();
-    if (lastCheckIn !== today) {
-      updateCoins(prev => Math.min(prev + 1000, 10000));
-      localStorage.setItem('gacha_last_check_in', today);
-    }
-  }, []);
+    giveDailyReward();
+    fetchGiftStatus();
+  }, [giveDailyReward, fetchGiftStatus]);
 
   const selectVersion = (versionId: string) => {
     if (isMixedPool) return;
@@ -149,8 +260,15 @@ export function GachaPage() {
     return pool.filter(card => rarityGroup.includes(card.rarity));
   };
 
-  const drawCardByRarityGroup = useCallback((rarityGroup: string[], excludeIds: Set<string> = new Set()): GachaCard => {
-    const pool = cardPool().filter(card => !excludeIds.has(card.id));
+  const isRuneCard = (card: GachaCard): boolean => {
+    return card.type === '符文';
+  };
+
+  const drawCardByRarityGroup = useCallback((rarityGroup: string[], excludeIds: Set<string> = new Set(), excludeRune: boolean = true): GachaCard => {
+    let pool = cardPool.filter(card => !excludeIds.has(card.id));
+    if (excludeRune) {
+      pool = pool.filter(card => !isRuneCard(card));
+    }
     const filteredPool = getCardsByRarityGroup(pool, rarityGroup);
     
     if (filteredPool.length === 0) {
@@ -168,8 +286,11 @@ export function GachaPage() {
     return filteredPool[Math.floor(Math.random() * filteredPool.length)];
   }, [cardPool, selectedGame]);
 
-  const drawRandomRarityCard = useCallback((excludeIds: Set<string> = new Set()): GachaCard => {
-    const pool = cardPool().filter(card => !excludeIds.has(card.id));
+  const drawRandomRarityCard = useCallback((excludeIds: Set<string> = new Set(), excludeRune: boolean = true): GachaCard => {
+    let pool = cardPool.filter(card => !excludeIds.has(card.id));
+    if (excludeRune) {
+      pool = pool.filter(card => !isRuneCard(card));
+    }
     
     if (pool.length === 0) {
       return {
@@ -184,12 +305,12 @@ export function GachaPage() {
 
     const random = Math.random();
     let cumulative = 0;
-    const sortedRarities = Object.keys(RARITY_CONFIG).sort((a, b) => {
-      return RARITY_CONFIG[b].probability - RARITY_CONFIG[a].probability;
+    const sortedRarities = Object.keys(currentRarityConfig).sort((a, b) => {
+      return currentRarityConfig[b].probability - currentRarityConfig[a].probability;
     });
 
     for (const rarity of sortedRarities) {
-      const config = RARITY_CONFIG[rarity];
+      const config = currentRarityConfig[rarity];
       cumulative += config.probability;
       if (random <= cumulative) {
         const cards = pool.filter(card => card.rarity === rarity);
@@ -200,10 +321,13 @@ export function GachaPage() {
     }
     
     return pool[Math.floor(Math.random() * pool.length)];
-  }, [cardPool, selectedGame]);
+  }, [cardPool, selectedGame, currentRarityConfig]);
 
-  const drawFoilCard = useCallback((excludeIds: Set<string> = new Set()): GachaCard => {
-    const pool = cardPool().filter(card => !excludeIds.has(card.id));
+  const drawFoilCard = useCallback((excludeIds: Set<string> = new Set(), excludeRune: boolean = true): GachaCard => {
+    let pool = cardPool.filter(card => !excludeIds.has(card.id));
+    if (excludeRune) {
+      pool = pool.filter(card => !isRuneCard(card));
+    }
     
     const foilRarities = ['N_FOIL', 'U_FOIL', 'R', 'E', 'AA', 'AA_SIGN', 'AA_ULTIMATE', 'rare', 'super_rare', 'ultra_rare', 'secret_rare'];
     const foilPool = pool.filter(card => foilRarities.includes(card.rarity));
@@ -224,21 +348,35 @@ export function GachaPage() {
   }, [cardPool, selectedGame]);
 
   const drawTokenRuneCard = useCallback((excludeIds: Set<string> = new Set()): GachaCard => {
-    const pool = cardPool().filter(card => !excludeIds.has(card.id));
+    const pool = cardPool.filter(card => !excludeIds.has(card.id));
     
-    const tokenRunePool = pool.filter(card => 
-      card.type === '指示物' || card.type === '符文' || card.type === '指示物或符文'
-    );
+    const tokenRunePool = pool.filter(card => card.type === '符文');
     
     if (tokenRunePool.length === 0) {
-      return drawRandomRarityCard(excludeIds);
+      const tokenPool = pool.filter(card => card.type === '指示物' || card.type === '指示物或符文');
+      if (tokenPool.length > 0) {
+        return tokenPool[Math.floor(Math.random() * tokenPool.length)];
+      }
+      return drawRandomRarityCard(excludeIds, false);
     }
     
     return tokenRunePool[Math.floor(Math.random() * tokenRunePool.length)];
   }, [cardPool, selectedGame, drawRandomRarityCard]);
 
+  const drawTokenCard = useCallback((excludeIds: Set<string> = new Set()): GachaCard => {
+    const pool = cardPool.filter(card => !excludeIds.has(card.id));
+    
+    const tokenPool = pool.filter(card => card.type === '指示物' || card.type === '指示物或符文');
+    
+    if (tokenPool.length === 0) {
+      return drawRandomRarityCard(excludeIds, false);
+    }
+    
+    return tokenPool[Math.floor(Math.random() * tokenPool.length)];
+  }, [cardPool, selectedGame, drawRandomRarityCard]);
+
   const drawCard = useCallback((): GachaCard => {
-    const pool = cardPool();
+    const pool = cardPool;
     if (pool.length === 0) {
       return {
         id: 'default',
@@ -277,21 +415,34 @@ export function GachaPage() {
     }
     
     return pool[Math.floor(Math.random() * pool.length)];
-  }, [cardPool, selectedGame]);
+  }, [cardPool, selectedGame, getRarityConfig]);
 
-  const canOpenPack = () => {
+  const canOpenPack = useCallback(() => {
     if (isOpening) return false;
     if (!selectedPack) return false;
     if (!isMixedPool && !selectedVersion) return false;
     const pack = PACK_CONFIG.find(p => p.id === selectedPack);
     if (!pack || coins < pack.price) return false;
     return true;
-  };
+  }, [isOpening, selectedPack, isMixedPool, selectedVersion, coins]);
 
-  const openPack = useCallback(() => {
+  const openPack = useCallback(async () => {
     if (!canOpenPack()) return;
     
     const pack = PACK_CONFIG.find(p => p.id === selectedPack)!;
+    
+    try {
+      const spendResponse = await gachaService.spendCoins(pack.price);
+      if (!spendResponse.success) {
+        toast.error(spendResponse.message || '金币扣除失败');
+        return;
+      }
+      updateCoinsInAuth(spendResponse.data.coins);
+    } catch (error) {
+      console.error('金币扣除失败:', error);
+      toast.error('金币扣除失败，请重试');
+      return;
+    }
     
     setIsOpening(true);
     setShowResult(false);
@@ -325,7 +476,7 @@ export function GachaPage() {
           'foil'
         ];
         
-        const drawNext = () => {
+        const drawNext = async () => {
           if (cardIndex < standardDraws.length) {
             const drawType = standardDraws[cardIndex];
             let card: GachaCard;
@@ -344,7 +495,7 @@ export function GachaPage() {
             if (cardIndex < standardDraws.length) {
               setTimeout(drawNext, delay);
             } else {
-              finishDrawing();
+              await finishDrawing();
             }
           }
         };
@@ -359,17 +510,16 @@ export function GachaPage() {
           RARITY_GROUPS.NORMAL,
           RARITY_GROUPS.NORMAL,
           RARITY_GROUPS.NORMAL,
-          RARITY_GROUPS.NORMAL,
           RARITY_GROUPS.NON_FOIL,
           RARITY_GROUPS.NON_FOIL,
           RARITY_GROUPS.NON_FOIL,
           RARITY_GROUPS.RARE_AND_ABOVE,
           RARITY_GROUPS.RARE_AND_ABOVE,
-          'foil',
-          'token_rune'
+          'token_rune',
+          'token'
         ];
         
-        const drawNext = () => {
+        const drawNext = async () => {
           if (cardIndex < premiumDraws.length) {
             const drawType = premiumDraws[cardIndex];
             let card: GachaCard;
@@ -380,6 +530,8 @@ export function GachaPage() {
               card = drawFoilCard(drawnIds);
             } else if (drawType === 'token_rune') {
               card = drawTokenRuneCard(drawnIds);
+            } else if (drawType === 'token') {
+              card = drawTokenCard(drawnIds);
             } else {
               card = drawCardByRarityGroup(Array.isArray(drawType) ? drawType : [drawType], drawnIds);
             }
@@ -390,7 +542,7 @@ export function GachaPage() {
             if (cardIndex < premiumDraws.length) {
               setTimeout(drawNext, delay);
             } else {
-              finishDrawing();
+              await finishDrawing();
             }
           }
         };
@@ -399,9 +551,8 @@ export function GachaPage() {
       }
     };
 
-    const finishDrawing = () => {
+    const finishDrawing = async () => {
       setDrawHistory(prev => [...results, ...prev]);
-      updateCoins(prev => prev - pack.price);
       setAnimationStep(1);
       
       setTimeout(() => {
@@ -414,7 +565,7 @@ export function GachaPage() {
     };
 
     drawWithAnimation();
-  }, [selectedPack, coins, isOpening, ownedCards, isMixedPool, selectedVersion, drawCardByRarityGroup, drawRandomRarityCard, drawFoilCard, drawTokenRuneCard]);
+  }, [selectedPack, coins, isOpening, ownedCards, isMixedPool, selectedVersion, drawCardByRarityGroup, drawRandomRarityCard, drawFoilCard, drawTokenRuneCard, drawTokenCard, canOpenPack, updateCoinsInAuth, getRarityConfig]);
 
   const resetHistory = () => {
     setDrawHistory([]);
@@ -424,7 +575,7 @@ export function GachaPage() {
     refetch();
   };
 
-  const pool = cardPool();
+  const pool = cardPool;
   const selectedPackConfig = PACK_CONFIG.find(p => p.id === selectedPack);
 
   const rareCardsCount = currentDraws.filter(r => ['R', 'E', 'AA', 'AA_SIGN', 'AA_ULTIMATE', 'rare', 'super_rare', 'ultra_rare', 'secret_rare'].includes(r.card.rarity)).length;
@@ -434,30 +585,23 @@ export function GachaPage() {
     <div className="min-h-screen bg-gradient-to-br from-black via-purple-950 to-black p-6 relative overflow-hidden">
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top,_var(--tw-gradient-stops))] from-purple-900/20 via-transparent to-transparent pointer-events-none" />
       
-      <div className="max-w-5xl mx-auto relative z-10">
-        <div className="text-center mb-10">
+      <div className="max-w-6xl mx-auto relative z-10">
+        <div className="text-center mb-8">
           <div className="inline-flex items-center gap-4 mb-4 relative">
             <div className="absolute inset-0 blur-xl bg-yellow-500/30 animate-pulse rounded-full" />
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-yellow-400 via-orange-500 to-red-500 flex items-center justify-center shadow-[0_0_30px_rgba(251,191,36,0.5)] animate-[pulse_2s_ease-in-out_infinite]">
-              <Gift className="w-10 h-10 text-white" />
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-yellow-400 via-orange-500 to-red-500 flex items-center justify-center shadow-[0_0_30px_rgba(251,191,36,0.6)] animate-[pulse_2s_ease-in-out_infinite]">
+              <Gift className="w-6 h-6 text-white" />
             </div>
-            <h1 className="text-5xl font-black tracking-wider relative">
-              <span className="bg-gradient-to-r from-yellow-400 via-orange-400 to-red-500 bg-clip-text text-transparent drop-shadow-[0_0_10px_rgba(251,191,36,0.8)]">
-                幸运开包
+            <h1 className="text-4xl font-black tracking-wider relative">
+              <span className="bg-gradient-to-r from-yellow-400 via-orange-400 to-red-400 bg-clip-text text-transparent drop-shadow-[0_0_10px_rgba(251,191,36,0.8)]">
+                抽卡系统
               </span>
             </h1>
-            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-yellow-400 via-orange-500 to-red-500 flex items-center justify-center shadow-[0_0_30px_rgba(251,191,36,0.5)] animate-[pulse_2s_ease-in-out_infinite]">
-              <Gift className="w-10 h-10 text-white" />
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-yellow-400 via-orange-500 to-red-500 flex items-center justify-center shadow-[0_0_30px_rgba(251,191,36,0.6)] animate-[pulse_2s_ease-in-out_infinite]">
+              <Gift className="w-6 h-6 text-white" />
             </div>
           </div>
-          <p className="text-orange-300/80 text-lg tracking-wide">选择你的命运，开启卡牌之旅</p>
-          <div className="mt-4 inline-block">
-            <div className="px-4 py-2 bg-gradient-to-r from-amber-500/20 via-orange-500/20 to-amber-500/20 rounded-full border border-amber-500/30">
-              <p className="text-amber-300/90 text-sm">
-                ⚠️ 概率有点小错误，反正随便做着玩的，抽着图一乐吧~
-              </p>
-            </div>
-          </div>
+          <p className="text-orange-300/80 text-lg tracking-wide">开启卡牌之旅，收集稀有卡牌</p>
         </div>
 
         <div className="flex flex-wrap justify-center items-center gap-4 mb-8">
@@ -470,12 +614,11 @@ export function GachaPage() {
               <span className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-yellow-400 to-orange-400 tabular-nums">
                 {coins.toLocaleString()}
               </span>
-              <span className="text-yellow-400/80 font-bold">金币</span>
+              <span className="text-yellow-400/80 font-bold">星币</span>
             </div>
           </div>
         </div>
 
-        {/* Version Selection */}
         <div className="relative mb-8">
           <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-purple-500/20 rounded-3xl blur-xl" />
           <div className="relative bg-black/60 backdrop-blur-xl rounded-3xl p-6 border border-purple-500/30 shadow-[0_0_50px_rgba(168,85,247,0.2)]">
@@ -504,7 +647,7 @@ export function GachaPage() {
                 混池模式
               </Button>
             </div>
-          
+            
             {isMixedPool ? (
               <div className="relative py-12 text-center">
                 <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-500/10 to-transparent animate-[shimmer_2s_infinite]" />
@@ -524,7 +667,6 @@ export function GachaPage() {
                         ? 'bg-gradient-to-br from-purple-600 to-pink-600 border-pink-400 shadow-[0_0_30px_rgba(236,72,153,0.5)] scale-105'
                         : 'bg-white/5 border-purple-500/30 hover:bg-white/10 hover:border-purple-500/50'
                     )}
-                    style={{ animationDelay: `${index * 100}ms` }}
                   >
                     <div className="text-center">
                       <p className={cn(
@@ -552,7 +694,6 @@ export function GachaPage() {
           </div>
         </div>
 
-        {/* Card Pool Info */}
         <div className="text-center mb-6">
           <p className="inline-block px-6 py-2 bg-black/40 rounded-full border border-purple-500/30">
             <span className="text-purple-300">符文战场</span>
@@ -566,7 +707,6 @@ export function GachaPage() {
           </p>
         </div>
 
-        {/* Pack Selection */}
         <div className="relative mb-8">
           <div className="absolute inset-0 bg-gradient-to-b from-transparent via-yellow-500/10 to-transparent rounded-3xl blur-2xl" />
           <div className="relative bg-black/70 backdrop-blur-xl rounded-3xl p-8 border border-yellow-500/30 shadow-[0_0_60px_rgba(251,191,36,0.15)]">
@@ -585,58 +725,56 @@ export function GachaPage() {
                   className={cn(
                     'relative p-8 rounded-3xl border-2 transition-all duration-500 transform overflow-hidden group',
                     selectedPack === pack.id
-                      ? 'bg-gradient-to-br from-yellow-600 via-orange-500 to-red-500 border-orange-400 shadow-[0_0_50px_rgba(251,146,60,0.6)] scale-105'
-                      : 'bg-white/5 border-orange-500/20 hover:bg-white/10 hover:border-orange-500/40'
+                      ? `bg-gradient-to-br ${pack.color} border-white shadow-[0_0_60px_rgba(168,85,247,0.4)] scale-105`
+                      : 'bg-white/5 border-white/20 hover:bg-white/10 hover:border-white/40'
                   )}
                 >
-                  <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-                  <div className="relative">
-                    <div className="text-center">
+                  {selectedPack === pack.id && (
+                    <div className="absolute inset-0 bg-white/10 animate-pulse" />
+                  )}
+                  <div className="relative z-10">
+                    <div className="flex items-center justify-center mb-4">
                       <div className={cn(
-                        'w-24 h-24 mx-auto mb-4 rounded-2xl flex items-center justify-center transition-all duration-300',
-                        selectedPack === pack.id 
-                          ? 'bg-white/30 shadow-[0_0_30px_rgba(255,255,255,0.3)]' 
-                          : 'bg-gradient-to-br from-yellow-500/20 to-orange-500/20'
+                        'w-20 h-20 rounded-2xl bg-gradient-to-br',
+                        pack.color,
+                        'flex items-center justify-center shadow-2xl transform group-hover:scale-110 transition-transform duration-500'
                       )}>
-                        <Package className={cn(
-                          'w-14 h-14 transition-all duration-300',
-                          selectedPack === pack.id ? 'text-white animate-bounce' : 'text-orange-400'
-                        )} />
-                      </div>
-                      <h3 className={cn(
-                        'text-2xl font-black tracking-wide mb-2',
-                        selectedPack === pack.id ? 'text-white' : 'text-orange-200'
-                      )}>
-                        {pack.name}
-                      </h3>
-                      <p className={cn(
-                        'text-sm mb-4',
-                        selectedPack === pack.id ? 'text-orange-100' : 'text-orange-300/60'
-                      )}>
-                        包含 <span className="font-bold">{pack.cards}</span> 张卡牌
-                      </p>
-                      <div className={cn(
-                        'inline-flex items-center gap-2 px-4 py-2 rounded-xl transition-all duration-300',
-                        selectedPack === pack.id 
-                          ? 'bg-black/30 text-white' 
-                          : 'bg-orange-500/20 text-orange-300'
-                      )}>
-                        <Coins className="w-5 h-5 text-yellow-400" />
-                        <span className={cn(
-                          'text-xl font-black',
-                          selectedPack === pack.id ? 'text-yellow-300' : 'text-orange-400'
-                        )}>
-                          {pack.price}
-                        </span>
+                        <Package className="w-10 h-10 text-white" />
                       </div>
                     </div>
-                    {selectedPack === pack.id && (
-                      <div className="absolute top-4 right-4 flex items-center gap-1 text-white bg-green-500/90 px-3 py-1 rounded-full">
-                        <Check className="w-4 h-4" />
-                        <span className="text-sm font-bold">已选</span>
-                      </div>
-                    )}
+                    <h3 className={cn(
+                      'text-2xl font-black tracking-wider mb-2 text-center',
+                      selectedPack === pack.id ? 'text-white' : 'text-purple-200'
+                    )}>
+                      {pack.name}
+                    </h3>
+                    <p className={cn(
+                      'text-sm mb-4 text-center',
+                      selectedPack === pack.id ? 'text-white/80' : 'text-purple-300/70'
+                    )}>
+                      包含 <span className="font-bold">{pack.cards}</span> 张卡牌
+                    </p>
+                    <div className={cn(
+                      'inline-flex items-center gap-2 px-6 py-3 rounded-2xl transition-all duration-300 w-full justify-center',
+                      selectedPack === pack.id 
+                        ? 'bg-black/30 text-white' 
+                        : 'bg-orange-500/20 text-orange-300'
+                    )}>
+                      <Coins className="w-5 h-5" />
+                      <span className={cn(
+                        'text-2xl font-black',
+                        selectedPack === pack.id ? 'text-yellow-300' : 'text-orange-400'
+                      )}>
+                        {pack.price}
+                      </span>
+                    </div>
                   </div>
+                  {selectedPack === pack.id && (
+                    <div className="absolute top-4 right-4 flex items-center gap-1 text-white bg-green-500/90 px-3 py-1 rounded-full animate-bounce">
+                      <Check className="w-4 h-4" />
+                      <span className="text-sm font-bold">已选</span>
+                    </div>
+                  )}
                 </button>
               ))}
             </div>
@@ -646,361 +784,301 @@ export function GachaPage() {
                 onClick={openPack}
                 disabled={!canOpenPack()}
                 className={cn(
-                  'relative px-16 py-6 text-2xl font-black rounded-2xl transition-all duration-300 overflow-hidden group',
+                  'relative px-16 py-6 text-2xl font-black rounded-3xl transition-all duration-500 overflow-hidden group',
                   canOpenPack()
-                    ? 'bg-gradient-to-r from-yellow-500 via-orange-500 to-red-500 hover:from-yellow-400 hover:via-orange-400 hover:to-red-400 shadow-[0_0_40px_rgba(251,146,60,0.5)] hover:scale-105'
+                    ? 'bg-gradient-to-r from-yellow-500 via-orange-500 to-red-500 hover:from-yellow-400 hover:via-orange-400 hover:to-red-400 shadow-[0_0_60px_rgba(251,191,36,0.5)] hover:scale-105 active:scale-95'
                     : 'bg-gray-700/50 text-gray-400 cursor-not-allowed'
                 )}
               >
-                <span className="relative z-10 flex items-center gap-3">
-                  <Gift className="w-8 h-8" />
-                  {isOpening ? '正在开包...' : '开始抽卡'}
-                </span>
-                {canOpenPack() && (
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent animate-[shimmer_1.5s_infinite]" />
+                {isOpening ? (
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 border-3 border-white/30 border-t-white rounded-full animate-spin" />
+                    <span>开包中...</span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-3">
+                    <Zap className="w-8 h-8 animate-pulse" />
+                    <span>开启补充包</span>
+                  </div>
                 )}
               </Button>
             </div>
-            
-            {!canOpenPack() && (
-              <p className="text-center text-orange-300/60 mt-4 text-sm">
-                {isOpening ? '🎰 转动中...' : !selectedPack ? '💡 请先选择补充包' : (!isMixedPool && !selectedVersion ? '💡 请先选择版本' : coins < (PACK_CONFIG.find(p => p.id === selectedPack)?.price || 0) ? '💰 金币不足' : '📦 卡池为空')}
-              </p>
-            )}
           </div>
         </div>
 
-        <div className="flex justify-center items-center min-h-[280px]">
-          {isLoading ? (
-            <div className="text-center">
-              <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-gradient-to-r from-purple-500 to-pink-500 animate-spin flex items-center justify-center">
-                <RefreshCw className="w-12 h-12 text-white" />
-              </div>
-              <p className="text-purple-300 text-xl font-bold">加载卡池中...</p>
-            </div>
-          ) : pool.length === 0 ? (
-            <div className="text-center">
-              <div className="w-32 h-32 mx-auto mb-4 rounded-full bg-gray-800/50 flex items-center justify-center border-2 border-dashed border-purple-500/30">
-                <Package className="w-16 h-16 text-purple-400/50" />
-              </div>
-              <p className="text-purple-300/60 text-xl">暂无卡牌数据</p>
-            </div>
-          ) : isOpening && !showResult ? (
-            <div className="relative">
-              <div className="absolute inset-0 bg-gradient-to-r from-yellow-500/30 via-orange-500/30 to-red-500/30 rounded-3xl blur-2xl animate-pulse" />
-              <div className="relative w-56 h-72 bg-gradient-to-br from-amber-600 via-amber-700 to-amber-900 rounded-3xl border-4 border-yellow-400/50 flex items-center justify-center shadow-[0_0_60px_rgba(251,191,36,0.4)]">
-                <div className="text-center">
-                  <div className="w-20 h-20 mx-auto mb-4 rounded-xl bg-gradient-to-br from-yellow-400/30 to-orange-400/30 flex items-center justify-center animate-bounce">
-                    <Package className="w-12 h-12 text-yellow-300" />
+        {(showResult || drawHistory.length > 0) && (
+          <Card className="bg-black/80 backdrop-blur-xl border border-purple-500/30 rounded-3xl overflow-hidden mb-8">
+            <CardHeader className="border-b border-purple-500/20 bg-gradient-to-r from-purple-500/10 to-pink-500/10 pb-4">
+              <div className="flex items-center justify-between">
+                <CardTitle className="flex items-center gap-3 text-purple-300">
+                  <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center">
+                    <PartyPopper className="w-5 h-5 text-white" />
                   </div>
-                  <p className="text-yellow-200 text-2xl font-black mb-3 animate-pulse">正在开包</p>
-                  <p className="text-yellow-400/80 font-mono text-lg">{currentDraws.length} / {selectedPackConfig?.cards}</p>
-                </div>
-              </div>
-              <div className="absolute -inset-1 bg-gradient-to-r from-yellow-500 via-orange-500 to-red-500 rounded-3xl opacity-50 animate-ping" />
-              <div className="absolute -inset-2 bg-gradient-to-r from-yellow-500 via-orange-500 to-red-500 rounded-3xl opacity-30 animate-pulse" />
-            </div>
-          ) : showResult && !openResultDialog ? (
-            <div className="text-center">
-              <div className="relative inline-block">
-                <div className="absolute inset-0 bg-gradient-to-r from-green-500/30 to-yellow-500/30 rounded-3xl blur-xl animate-pulse" />
-                <div className="relative w-48 h-60 bg-gradient-to-br from-green-600 via-emerald-700 to-green-900 rounded-3xl border-4 border-green-400/50 flex items-center justify-center shadow-[0_0_50px_rgba(34,197,94,0.4)]">
-                  <div className="text-center">
-                    <div className="w-20 h-20 mx-auto mb-4 rounded-xl bg-white/20 flex items-center justify-center animate-bounce">
-                      <PartyPopper className="w-12 h-12 text-white" />
-                    </div>
-                    <p className="text-white text-xl font-black mb-2">开包完成!</p>
-                    <p className="text-green-200/70 text-sm">点击查看结果</p>
-                  </div>
-                </div>
-                <Sparkles className="absolute -top-4 -right-4 w-10 h-10 text-yellow-400 animate-pulse drop-shadow-[0_0_10px_rgba(250,204,21,0.8)]" />
-                <Sparkles className="absolute -bottom-2 -left-4 w-8 h-8 text-yellow-300 animate-pulse drop-shadow-[0_0_10px_rgba(250,204,21,0.6)]" />
-              </div>
-            </div>
-          ) : (
-            <div className="text-center">
-              <div className="relative inline-block">
-                <div className="absolute inset-0 bg-gradient-to-r from-amber-500/20 to-orange-500/20 rounded-3xl blur-lg" />
-                <div className="relative w-44 h-56 bg-gradient-to-br from-amber-600 via-amber-700 to-amber-900 rounded-3xl border-4 border-amber-400/30 flex items-center justify-center shadow-[0_0_40px_rgba(251,191,36,0.3)]">
-                  <div className="text-center">
-                    <Package className="w-16 h-16 mx-auto text-amber-300/80 mb-3" />
-                    <p className="text-amber-200 font-bold">等待开包</p>
-                  </div>
-                </div>
-                <div className="absolute -top-3 -right-3 w-12 h-12">
-                  <div className="w-full h-full bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full animate-pulse shadow-[0_0_20px_rgba(251,191,36,0.6)]" />
-                </div>
-                <div className="absolute -bottom-2 -left-3 w-8 h-8">
-                  <div className="w-full h-full bg-gradient-to-br from-pink-400 to-red-500 rounded-full animate-pulse shadow-[0_0_15px_rgba(244,63,94,0.6)]" />
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* History */}
-        <Card className="bg-white/10 backdrop-blur-lg border-0">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
-              <History className="w-5 h-5" />
-              开包记录
-              <span className="text-sm font-normal text-gray-400">({drawHistory.length})</span>
-            </CardTitle>
-            {drawHistory.length > 0 && (
-              <div className="flex items-center gap-2">
-                <div className="flex bg-white/10 rounded-lg p-1">
+                  <span className="text-xl font-bold tracking-wide">本次结果</span>
+                  {newCardsCount > 0 && (
+                    <Badge className="bg-green-500 text-white px-3 py-1 text-sm">
+                      {newCardsCount} 张新卡
+                    </Badge>
+                  )}
+                  {rareCardsCount > 0 && (
+                    <Badge className="bg-purple-500 text-white px-3 py-1 text-sm">
+                      {rareCardsCount} 张稀有
+                    </Badge>
+                  )}
+                </CardTitle>
+                <div className="flex gap-2">
                   <Button
-                    variant={historyViewMode === 'grid' ? 'default' : 'ghost'}
-                    size="icon"
-                    className={historyViewMode === 'grid' ? 'bg-purple-600 hover:bg-purple-700' : 'hover:bg-white/10'}
-                    onClick={() => setHistoryViewMode('grid')}
+                    variant="outline"
+                    size="sm"
+                    onClick={resetHistory}
+                    className="border-gray-600 text-gray-300 hover:bg-gray-800"
                   >
-                    <Layers className="w-4 h-4" />
-                  </Button>
-                  <Button
-                    variant={historyViewMode === 'list' ? 'default' : 'ghost'}
-                    size="icon"
-                    className={historyViewMode === 'list' ? 'bg-purple-600 hover:bg-purple-700' : 'hover:bg-white/10'}
-                    onClick={() => setHistoryViewMode('list')}
-                  >
-                    <span className="w-4 h-4 flex items-center justify-center">☰</span>
+                    <RefreshCw className="w-4 h-4 mr-1" />
+                    清除
                   </Button>
                 </div>
-                <Button variant="ghost" size="sm" onClick={resetHistory} className="text-gray-400 hover:text-red-400">
-                  <X className="w-4 h-4 mr-1" />
-                  清空记录
-                </Button>
               </div>
-            )}
-          </CardHeader>
-          <CardContent>
-            {drawHistory.length === 0 ? (
-              <div className="text-center py-8 text-gray-400">
-                <History className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                <p>暂无开包记录</p>
-              </div>
-            ) : historyViewMode === 'grid' ? (
-              <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 max-h-64 overflow-y-auto">
-                {drawHistory.map((result, index) => {
-                  const rarity = getRarityConfig(result.card.rarity);
-                  return (
-                    <div
-                      key={`${result.card.id}-${index}`}
-                      className={cn(
-                        'relative p-3 rounded-xl border',
-                        rarity.borderColor,
-                        rarity.bgColor
-                      )}
-                    >
-                      {result.isNew && (
-                        <div className="absolute -top-2 -right-2 w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
-                          <span className="text-white text-xs">新</span>
-                        </div>
-                      )}
-                      <div className="flex items-center gap-1 mb-2">
-                        <Star className={cn('w-3 h-3', rarity.color)} />
-                        <span className={cn('text-xs font-bold', rarity.color)}>{rarity.name}</span>
-                      </div>
-                      <p className="text-sm font-medium text-gray-800 truncate">{result.card.name}</p>
-                      <p className="text-xs text-gray-500">{result.card.type}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-80 overflow-y-auto">
-                {drawHistory.map((result, index) => {
-                  const rarity = getRarityConfig(result.card.rarity);
-                  return (
-                    <div
-                      key={`${result.card.id}-${index}`}
-                      className={cn(
-                        'flex items-center gap-4 p-3 rounded-xl border',
-                        rarity.borderColor,
-                        rarity.bgColor
-                      )}
-                    >
-                      {result.isNew && (
-                        <div className="px-2 py-1 bg-red-500 text-white text-xs font-bold rounded-full">
-                          NEW!
-                        </div>
-                      )}
-                      <div className="w-12 h-12 bg-gradient-to-br from-purple-500 via-pink-500 to-red-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                        {result.card.images?.[0] ? (
-                          <img src={result.card.images[0]} alt={result.card.name} className="w-10 h-10 object-contain rounded" />
-                        ) : (
-                          <span className="text-lg">🎴</span>
+            </CardHeader>
+            <CardContent className="p-6">
+              {historyViewMode === 'grid' ? (
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+                  {(showResult ? currentDraws : drawHistory).map((draw, index) => {
+                    const rarityConfig = getRarityConfig(draw.card.rarity);
+                    const rarityIcon = RARITY_ICONS[draw.card.rarity];
+                    return (
+                      <div
+                        key={index}
+                        className={cn(
+                          'group relative bg-gradient-to-br from-gray-800/50 to-gray-900/50 rounded-xl p-4 border-2 transition-all duration-300 hover:scale-105',
+                          rarityConfig.glowColor,
+                          draw.card.rarity === 'AA_ULTIMATE' ? 'border-red-500 shadow-[0_0_30px_rgba(239,68,68,0.5)]' :
+                          draw.card.rarity === 'AA_SIGN' ? 'border-red-400 shadow-[0_0_20px_rgba(248,113,113,0.4)]' :
+                          ['R', 'E', 'AA', 'rare', 'super_rare', 'ultra_rare', 'secret_rare'].includes(draw.card.rarity) ? 'border-purple-400 shadow-[0_0_15px_rgba(192,132,252,0.3)]' :
+                          'border-gray-700'
                         )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <Star className={cn('w-4 h-4', rarity.color)} />
-                          <span className={cn('font-bold', rarity.color)}>{rarity.name}</span>
-                          <span className="font-semibold text-gray-800 truncate">{result.card.name}</span>
+                      >
+                        {draw.isNew && (
+                          <div className="absolute -top-2 -left-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full font-bold z-10 animate-pulse">
+                            NEW
+                          </div>
+                        )}
+                        <div
+                          className={cn(
+                            'w-full aspect-square rounded-lg mb-3 flex items-center justify-center bg-gradient-to-br',
+                            rarityConfig.bgColor,
+                            'border',
+                            rarityConfig.borderColor
+                          )}
+                        >
+                          {draw.card.images && draw.card.images.length > 0 ? (
+                            <img
+                              src={draw.card.images[0]}
+                              alt={draw.card.name}
+                              className="w-full h-full object-cover rounded-lg"
+                            />
+                          ) : (
+                            <Package className="w-12 h-12 text-gray-500" />
+                          )}
                         </div>
-                        <p className="text-sm text-gray-600">{result.card.type}</p>
+                        <div className="space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className={cn(
+                              'text-sm font-bold truncate',
+                              rarityConfig.color
+                            )}>
+                              {draw.card.name}
+                            </p>
+                            <span className="text-xs font-mono text-gray-500">#{index + 1}</span>
+                          </div>
+                          <div className={cn('flex items-center gap-1', rarityConfig.color)}>
+                            {rarityIcon}
+                            <span className="text-xs font-medium">{rarityConfig.name}</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="text-xs text-gray-500 flex-shrink-0">
-                        {result.card.version && <span>版本: {result.card.version}</span>}
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {(showResult ? currentDraws : drawHistory).map((draw, index) => {
+                    const rarityConfig = getRarityConfig(draw.card.rarity);
+                    const rarityIcon = RARITY_ICONS[draw.card.rarity];
+                    return (
+                      <div
+                        key={index}
+                        className={cn(
+                          'flex items-center gap-4 p-4 rounded-xl border-2 transition-all duration-300',
+                          rarityConfig.glowColor,
+                          ['R', 'E', 'AA', 'AA_SIGN', 'AA_ULTIMATE', 'rare', 'super_rare', 'ultra_rare', 'secret_rare'].includes(draw.card.rarity)
+                            ? 'bg-purple-500/10 border-purple-500/50'
+                            : 'bg-white/5 border-white/10'
+                        )}
+                      >
+                        <div
+                          className={cn(
+                            'w-16 h-16 rounded-lg flex items-center justify-center flex-shrink-0',
+                            rarityConfig.bgColor,
+                            'border',
+                            rarityConfig.borderColor
+                          )}
+                        >
+                          {draw.card.images && draw.card.images.length > 0 ? (
+                            <img
+                              src={draw.card.images[0]}
+                              alt={draw.card.name}
+                              className="w-full h-full object-cover rounded-lg"
+                            />
+                          ) : (
+                            <Package className="w-8 h-8 text-gray-500" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 mb-1">
+                            <p className={cn('text-lg font-bold', rarityConfig.color)}>{draw.card.name}</p>
+                            <span className="text-xs font-mono text-gray-500">#{index + 1}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className={cn('flex items-center gap-1', rarityConfig.color)}>
+                              {rarityIcon}
+                              <span className="text-xs">{rarityConfig.name}</span>
+                            </div>
+                            {draw.isNew && (
+                              <Badge className="bg-green-500 text-white text-xs flex-shrink-0">
+                                NEW
+                              </Badge>
+                            )}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
 
-        {/* Collection Stats */}
-        <Card className="bg-white/10 backdrop-blur-lg border-0 mt-8">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Crown className="w-5 h-5 text-yellow-400" />
-              收藏进度
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4">
-              <div className="flex-1">
-                <div className="flex justify-between text-sm mb-2">
-                  <span className="text-gray-300">已收集卡牌</span>
-                  <span className="text-white">{ownedCards.size} / {pool.length}</span>
-                </div>
-                <div className="h-3 bg-gray-700 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-yellow-400 via-pink-400 to-purple-400 transition-all duration-500"
-                    style={{ width: `${pool.length > 0 ? (ownedCards.size / pool.length) * 100 : 0}%` }}
-                  />
-                </div>
+        {showGift && !hasClaimedGift && (
+          <div
+            className="absolute cursor-pointer z-20"
+            style={{
+              left: `${giftPosition.x}%`,
+              top: `${giftPosition.y}%`,
+              transform: 'translate(-50%, -50%)'
+            }}
+            onClick={claimGift}
+          >
+            <div className="relative group">
+              <div className="absolute -inset-4 bg-gradient-to-r from-yellow-500/50 to-orange-500/50 rounded-full blur-xl animate-pulse" />
+              <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 flex items-center justify-center shadow-[0_0_30px_rgba(251,191,36,0.6)] animate-[bounce_2s_ease-in-out_infinite] hover:scale-110 transition-transform">
+                <Gift className="w-8 h-8 text-white" />
               </div>
-              <div className="text-4xl font-bold bg-gradient-to-r from-yellow-400 to-orange-400 bg-clip-text text-transparent">
-                {pool.length > 0 ? Math.round((ownedCards.size / pool.length) * 100) : 0}%
+              <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap text-yellow-400 font-bold text-sm animate-pulse">
+                点击领取！
               </div>
             </div>
-          </CardContent>
-        </Card>
+          </div>
+        )}
       </div>
 
-      {/* Result Dialog */}
       <Dialog open={openResultDialog} onOpenChange={setOpenResultDialog}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-hidden bg-gradient-to-br from-indigo-950 via-purple-950 to-pink-950 border-purple-500/30">
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-3 text-2xl">
-              <PartyPopper className="w-8 h-8 text-yellow-400" />
-              <span className="bg-gradient-to-r from-yellow-400 via-pink-400 to-purple-400 bg-clip-text text-transparent">
-                开包结果
-              </span>
+        <DialogContent className="sm:max-w-4xl bg-gradient-to-br from-gray-900 via-purple-950 to-black border border-purple-500/50 p-8">
+          <DialogHeader className="text-center mb-6">
+            <DialogTitle className="text-3xl font-black bg-gradient-to-r from-yellow-400 via-orange-400 to-red-400 bg-clip-text text-transparent">
+              🎉 抽卡完成！
             </DialogTitle>
-            <DialogDescription className="text-purple-300">
-              {selectedPackConfig?.name} · 获得 {currentDraws.length} 张卡牌
-              {rareCardsCount > 0 && <span className="text-yellow-400 ml-2">· {rareCardsCount} 张稀有</span>}
-              {newCardsCount > 0 && <span className="text-green-400 ml-2">· {newCardsCount} 张新卡</span>}
+            <DialogDescription className="text-purple-300 mt-2">
+              本次获得 {currentDraws.length} 张卡牌，{newCardsCount} 张新卡
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-6 max-h-[60vh] overflow-y-auto py-4 px-2">
-            {currentDraws.map((result, index) => {
-              const rarity = getRarityConfig(result.card.rarity);
-              const isHighRarity = ['R', 'E', 'AA', 'AA_SIGN', 'AA_ULTIMATE', 'rare', 'super_rare', 'ultra_rare', 'secret_rare'].includes(result.card.rarity);
-              const isFoil = result.card.rarity.includes('FOIL');
-              
+
+          <div className="grid grid-cols-3 md:grid-cols-5 gap-4 mb-6">
+            {currentDraws.map((draw, index) => {
+              const rarityConfig = getRarityConfig(draw.card.rarity);
+              const rarityIcon = RARITY_ICONS[draw.card.rarity];
               return (
                 <div
-                  key={`${result.card.id}-${index}`}
+                  key={index}
                   className={cn(
-                    'relative w-32 h-44 rounded-2xl border-2 overflow-hidden transform transition-all duration-500',
-                    rarity.borderColor,
-                    rarity.bgColor,
-                    isHighRarity && 'shadow-[0_0_25px_rgba(168,85,247,0.6)]',
-                    isFoil && 'shadow-[0_0_20px_rgba(251,191,36,0.5)]',
-                    !isHighRarity && !isFoil && rarity.glowColor ? `shadow-lg ${rarity.glowColor}` : 'shadow-lg'
+                    'relative p-4 rounded-2xl border-2 bg-gradient-to-br from-gray-800/30 to-gray-900/30',
+                    rarityConfig.glowColor,
+                    ['R', 'E', 'AA', 'AA_SIGN', 'AA_ULTIMATE', 'rare', 'super_rare', 'ultra_rare', 'secret_rare'].includes(draw.card.rarity)
+                      ? 'border-purple-400 shadow-[0_0_20px_rgba(192,132,252,0.3)]'
+                      : 'border-gray-700'
                   )}
-                  style={{ 
-                    animationDelay: `${index * 80}ms`,
-                    animation: isHighRarity ? 'pulse-glow 2s ease-in-out infinite' : 'none'
-                  }}
                 >
-                  {result.isNew && (
-                    <div className="absolute -top-1 -right-1 px-2 py-1 bg-gradient-to-r from-red-500 to-pink-500 text-white text-xs font-black rounded-full z-20 shadow-lg animate-bounce">
-                      NEW!
+                  {draw.isNew && (
+                    <div className="absolute -top-2 -right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full font-bold z-10">
+                      NEW
                     </div>
                   )}
-                  
-                  {isHighRarity && (
-                    <div className="absolute inset-0 bg-gradient-to-br from-purple-500/20 via-pink-500/10 to-transparent pointer-events-none animate-pulse" />
-                  )}
-                  
-                  <div className="absolute top-1 left-1 flex items-center gap-1">
-                    <div className={cn(
-                      'p-1 rounded-lg',
-                      isHighRarity ? 'bg-gradient-to-br from-purple-500 to-pink-500' : isFoil ? 'bg-gradient-to-br from-yellow-400 to-orange-400' : 'bg-gray-200/80'
-                    )}>
-                      <Star className={cn('w-3 h-3', isHighRarity || isFoil ? 'text-white' : rarity.color)} />
+                  <div
+                    className={cn(
+                      'w-full aspect-square rounded-xl mb-3 flex items-center justify-center',
+                      rarityConfig.bgColor,
+                      'border',
+                      rarityConfig.borderColor
+                    )}
+                  >
+                    {draw.card.images && draw.card.images.length > 0 ? (
+                      <img
+                        src={draw.card.images[0]}
+                        alt={draw.card.name}
+                        className="w-full h-full object-cover rounded-lg"
+                      />
+                    ) : (
+                      <Package className="w-10 h-10 text-gray-500" />
+                    )}
+                  </div>
+                  <div className="text-center space-y-1">
+                    <p className={cn('text-sm font-bold truncate', rarityConfig.color)}>
+                      {draw.card.name}
+                    </p>
+                    <div className={cn('flex items-center justify-center gap-1 text-xs', rarityConfig.color)}>
+                      {rarityIcon}
+                      <span>{rarityConfig.name}</span>
                     </div>
-                    <span className={cn('text-xs font-black', isHighRarity ? 'text-purple-200' : isFoil ? 'text-orange-200' : rarity.color)}>{rarity.name}</span>
                   </div>
-                  
-                  <div className="flex flex-col items-center justify-center h-full pt-6">
-                    <div className={cn(
-                      'w-20 h-20 rounded-xl flex items-center justify-center mb-2 transition-all duration-300',
-                      isHighRarity 
-                        ? 'bg-gradient-to-br from-purple-600 via-pink-500 to-red-500 shadow-[0_0_20px_rgba(168,85,247,0.6)]' 
-                        : isFoil
-                        ? 'bg-gradient-to-br from-yellow-400 via-orange-400 to-red-400 shadow-[0_0_15px_rgba(251,191,36,0.5)]'
-                        : 'bg-gradient-to-br from-purple-500 via-pink-500 to-red-500 shadow-lg'
-                    )}>
-                      {result.card.images?.[0] ? (
-                        <img src={result.card.images[0]} alt={result.card.name} className="w-16 h-16 object-contain rounded-lg" />
-                      ) : (
-                        <span className="text-3xl">🎴</span>
-                      )}
-                    </div>
-                    <h3 className={cn(
-                      'font-black text-center px-1 truncate text-sm',
-                      isHighRarity ? 'text-purple-900' : 'text-gray-800'
-                    )}>{result.card.name}</h3>
-                    <p className={cn(
-                      'text-xs mt-1',
-                      isHighRarity ? 'text-purple-600' : 'text-gray-500'
-                    )}>{result.card.type}</p>
-                  </div>
-                  
-                  <div className={cn(
-                    'absolute bottom-0 left-0 right-0 h-9 flex items-center justify-center',
-                    isHighRarity 
-                      ? 'bg-gradient-to-r from-purple-600/90 via-pink-600/90 to-purple-600/90' 
-                      : 'bg-black/60'
-                  )}>
-                    <p className="text-xs text-white/90 truncate px-2 font-medium">{result.card.description}</p>
-                  </div>
-                  
-                  {isHighRarity && (
-                    <>
-                      <div className="absolute -top-1 -left-1 w-4 h-4 bg-gradient-to-br from-purple-400 to-pink-400 rounded-full animate-ping opacity-75" />
-                      <div className="absolute -bottom-1 -right-1 w-3 h-3 bg-gradient-to-br from-pink-400 to-red-400 rounded-full animate-ping opacity-75" />
-                    </>
-                  )}
                 </div>
               );
             })}
           </div>
-          
-          <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
+
+          <div className="flex justify-center">
             <Button
-              variant="outline"
               onClick={() => setOpenResultDialog(false)}
-              className="bg-white/10 border-white/20 hover:bg-white/20"
+              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 px-8 py-3 rounded-xl font-bold"
             >
               关闭
             </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={showGiftDialog} onOpenChange={setShowGiftDialog}>
+        <DialogContent className="sm:max-w-md bg-gradient-to-br from-yellow-900/50 via-orange-950 to-black border border-yellow-500/50 p-8">
+          <DialogHeader className="text-center mb-6">
+            <DialogTitle className="text-3xl font-black text-yellow-400">
+              🎁 领取成功！
+            </DialogTitle>
+            <DialogDescription className="text-orange-300 mt-2">
+              恭喜获得随机礼包！
+            </DialogDescription>
+          </DialogHeader>
+          <div className="text-center py-8">
+            <div className="flex items-center justify-center gap-3 text-3xl font-black text-yellow-400">
+              <Coins className="w-10 h-10" />
+              <span>+1000 星币</span>
+            </div>
+            <p className="text-orange-300 mt-4">24小时后可再次领取</p>
+          </div>
+          <div className="flex justify-center">
             <Button
-              onClick={() => {
-                setOpenResultDialog(false);
-                setShowResult(false);
-              }}
-              className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+              onClick={() => setShowGiftDialog(false)}
+              className="bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 px-8 py-3 rounded-xl font-bold text-black"
             >
-              继续开包
+              太棒了！
             </Button>
           </div>
         </DialogContent>

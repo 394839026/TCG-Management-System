@@ -15,8 +15,6 @@ import { inventoryService, InventoryItem } from '@/services/inventory';
 
 const GAME_TYPES: Record<string, string> = {
   'rune': '符文战场',
-  'digimon': '数码宝贝',
-  'pokemon': '宝可梦',
   'shadowverse-evolve': '影之诗进化对决',
 };
 

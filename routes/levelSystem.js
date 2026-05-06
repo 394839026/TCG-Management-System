@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const User = require('../models/User');
+const Task = require('../models/Task');
+const UserTask = require('../models/UserTask');
 const Notification = require('../models/Notification');
 const { protect, authorize } = require('../middleware/auth');
 
@@ -17,6 +19,134 @@ const sendNotification = async (recipient, type, title, content, data = {}) => {
     });
   } catch (error) {
     console.error('发送通知错误:', error);
+  }
+};
+
+// 辅助函数：获取周期的开始时间
+function getPeriodStart(taskType) {
+  const now = new Date();
+  const periodStart = new Date(now);
+  
+  if (taskType === 'daily') {
+    periodStart.setHours(0, 0, 0, 0);
+  } else if (taskType === 'weekly') {
+    // 周一作为一周的开始
+    const day = periodStart.getDay();
+    const diff = periodStart.getDate() - day + (day === 0 ? -6 : 1);
+    periodStart.setDate(diff);
+    periodStart.setHours(0, 0, 0, 0);
+  }
+  
+  return periodStart;
+}
+
+// 辅助函数：获取周期的结束时间
+function getPeriodEnd(taskType) {
+  const periodStart = getPeriodStart(taskType);
+  const periodEnd = new Date(periodStart);
+  
+  if (taskType === 'daily') {
+    periodEnd.setHours(23, 59, 59, 999);
+  } else if (taskType === 'weekly') {
+    periodEnd.setDate(periodStart.getDate() + 6);
+    periodEnd.setHours(23, 59, 59, 999);
+  }
+  
+  return periodEnd;
+}
+
+// 更新任务进度
+const updateTaskProgress = async (userId, action, count = 1) => {
+  try {
+    console.log(`🎯 更新任务进度，用户ID: ${userId}，动作: ${action}`);
+    const now = new Date();
+    
+    // 获取所有相关的任务
+    const tasks = await Task.find({
+      isActive: true,
+      'target.action': action,
+      $or: [
+        { validUntil: { $exists: false } },
+        { validUntil: { $gte: now } }
+      ]
+    });
+    
+    console.log('📋 找到相关任务数量:', tasks.length);
+    
+    if (tasks.length === 0) {
+      return { updated: 0, completedTasks: [] };
+    }
+    
+    let updatedCount = 0;
+    let completedTasks = [];
+    
+    for (const task of tasks) {
+      const periodStart = getPeriodStart(task.type);
+      const periodEnd = getPeriodEnd(task.type);
+      
+      // 查找或创建用户任务
+      let userTask = await UserTask.findOne({
+        userId: userId,
+        taskId: task._id,
+        periodStart: periodStart
+      });
+      
+      if (!userTask) {
+        userTask = new UserTask({
+          userId: userId,
+          taskId: task._id,
+          progress: 0,
+          status: 'not-started',
+          periodStart: periodStart,
+          periodEnd: periodEnd
+        });
+      }
+      
+      // 检查是否已经领取过奖励（一次性任务
+      if (task.type === 'achievement' || task.type === 'one-time') {
+        const claimedTask = await UserTask.findOne({
+          userId: userId,
+          taskId: task._id,
+          status: 'claimed'
+        });
+        if (claimedTask) continue;
+      }
+      
+      // 检查是否已经完成但未领取
+      if (userTask.status === 'completed' || userTask.status === 'claimed') {
+        continue;
+      }
+      
+      // 更新进度
+      userTask.progress = Math.min(
+        userTask.progress + count,
+        task.target.value
+      );
+      
+      // 更新状态
+      if (userTask.progress >= task.target.value) {
+        userTask.status = 'completed';
+        userTask.completedAt = new Date();
+        completedTasks.push({
+          taskId: task._id,
+          taskName: task.name,
+          rewards: task.rewards
+        });
+      } else if (userTask.progress > 0) {
+        userTask.status = 'in-progress';
+      } else {
+        userTask.status = 'not-started';
+      }
+      
+      await userTask.save();
+      updatedCount++;
+      console.log('✅ 更新任务:', task.name, '进度:', userTask.progress);
+    }
+    
+    return { updated: updatedCount, completedTasks: completedTasks };
+  } catch (error) {
+    console.error('❌ 更新任务进度失败:', error);
+    return { updated: 0, completedTasks: [] };
   }
 };
 
@@ -337,6 +467,11 @@ router.post('/check-in', protect, async (req, res) => {
     console.log('📝 签到结果:', result);
     
     if (result.success) {
+      // 更新任务进度（签到任务）
+      console.log('🔄 开始更新签到相关任务进度...');
+      const taskResult = await updateTaskProgress(req.user._id, 'check_in', 1);
+      console.log('✅ 任务更新结果:', taskResult);
+      
       // 如果升级，发送通知
       if (result.levelUp) {
         await sendNotification(
@@ -356,7 +491,9 @@ router.post('/check-in', protect, async (req, res) => {
           totalCheckIns: result.totalCheckIns,
           newLevel: result.newLevel,
           newExp: result.exp,
-          levelUp: result.levelUp
+          levelUp: result.levelUp,
+          tasksUpdated: taskResult.updated,
+          completedTasks: taskResult.completedTasks
         }
       });
     } else {
