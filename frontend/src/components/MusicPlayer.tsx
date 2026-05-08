@@ -10,7 +10,7 @@ interface MusicPlayerProps {
 export function MusicPlayer({ isAdmin = false }: MusicPlayerProps) {
   const [currentTrackIndex, setCurrentTrackIndex] = useState(0)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [volume, setVolume] = useState(0.7)
+  const [volume, setVolume] = useState(0.1)
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
   const [isMuted, setIsMuted] = useState(false)
@@ -109,7 +109,7 @@ export function MusicPlayer({ isAdmin = false }: MusicPlayerProps) {
     const newMuted = !isMuted
     setIsMuted(newMuted)
     if (audioRef.current) {
-      audioRef.current.volume = newMuted ? 0 : volume || 0.7
+      audioRef.current.volume = newMuted ? 0 : volume || 0.1
     }
   }
 
