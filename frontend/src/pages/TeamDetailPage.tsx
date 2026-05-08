@@ -7,8 +7,12 @@ import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
-import { ArrowLeft, Users, Crown, X, Search, Send, Boxes, Edit2, Check, UserPlus, Coins, Clock, DollarSign, PlusCircle, Gift, Key, MessageSquare, UsersRound } from 'lucide-react';
-import { teamService, teamInventoryService, Team, DonationRecord, InvestmentRecord } from '@/services/api'
+import { ArrowLeft, Users, Crown, X, Search, Send, Boxes, Edit2, Check, UserPlus, Coins, Clock, DollarSign, PlusCircle, Gift, Key, MessageSquare, UsersRound, Briefcase, Edit, UserX, FileText, Download, Layers } from 'lucide-react';
+import { teamService, teamInventoryService, shopService, Team, DonationRecord, InvestmentRecord } from '@/services/api'
+import { SigningManagementDialog } from '@/components/teams/SigningManagementDialog'
+import { SignPlayerDialog } from '@/components/teams/SignPlayerDialog'
+import { AddSponsorDialog } from '@/components/teams/AddSponsorDialog'
+import { SignTeamDialog } from '@/components/shops/SignTeamDialog'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 
@@ -17,7 +21,7 @@ export function TeamDetailPage() {
   const navigate = useNavigate()
   const { user, setUser } = useAuth()
   const [inviteEmail, setInviteEmail] = useState('')
-  const [activeTab, setActiveTab] = useState<'members' | 'requests' | 'invites' | 'inventory' | 'donations' | 'funds' | 'borrowRecords'>('members')
+  const [activeTab, setActiveTab] = useState<'members' | 'requests' | 'invites' | 'inventory' | 'decks' | 'donations' | 'funds' | 'borrowRecords'>('members');
   const [activeRequestTab, setActiveRequestTab] = useState<'join' | 'donation' | 'borrow'>('join')
   const [showDonateDialog, setShowDonateDialog] = useState(false)
   const [donateAmount, setDonateAmount] = useState('')
@@ -31,7 +35,101 @@ export function TeamDetailPage() {
   const [borrowQuantity, setBorrowQuantity] = useState('1')
   const [borrowNote, setBorrowNote] = useState('')
   const [borrowReturnDate, setBorrowReturnDate] = useState('')
+  const [showSigningDialog, setShowSigningDialog] = useState(false)
+  const [showSignPlayerDialog, setShowSignPlayerDialog] = useState(false)
+  const [showAddSponsorDialog, setShowAddSponsorDialog] = useState(false)
+  const [editSignTeamOpen, setEditSignTeamOpen] = useState(false)
+  const [editingTeam, setEditingTeam] = useState<any>(null)
   const queryClient = useQueryClient();
+
+  // 签约管理查询
+  const { data: signedPlayersData, refetch: refetchSignedPlayers } = useQuery({
+    queryKey: ['team-signed-players', id],
+    queryFn: () => teamService.getSignedPlayers(id!),
+    enabled: !!id && activeTab === 'signing',
+  });
+
+  const { data: sponsorsData, refetch: refetchSponsors } = useQuery({
+    queryKey: ['team-sponsors', id],
+    queryFn: () => teamService.getSponsors(id!),
+    enabled: !!id && activeTab === 'signing',
+  });
+
+  const { data: signedShopsData, refetch: refetchSignedShops } = useQuery({
+    queryKey: ['team-signed-shops', id],
+    queryFn: () => teamService.getSignedShops(id!),
+    enabled: !!id && activeTab === 'signing',
+  });
+
+  const signedPlayers = signedPlayersData?.data || [];
+  const sponsors = sponsorsData?.data || [];
+  const signedShops = signedShopsData?.data || [];
+
+  // 删除签约选手突变
+  const releasePlayerMutation = useMutation({
+    mutationFn: (playerId: string) => teamService.releasePlayer(id!, playerId),
+    onSuccess: () => {
+      toast.success('已解约选手');
+      refetchSignedPlayers();
+      queryClient.invalidateQueries({ queryKey: ['team', id] });
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || '解约失败');
+    }
+  });
+
+  // 删除赞助商突变
+  const removeSponsorMutation = useMutation({
+    mutationFn: (sponsorId: string) => teamService.removeSponsor(id!, sponsorId),
+    onSuccess: () => {
+      toast.success('已移除赞助商');
+      refetchSponsors();
+      queryClient.invalidateQueries({ queryKey: ['team', id] });
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || '移除失败');
+    }
+  });
+
+  // 终止店铺签约突变
+  const terminateShopSigningMutation = useMutation({
+    mutationFn: (shopId: string) => shopService.terminateSignedTeam(shopId, id!),
+    onSuccess: () => {
+      toast.success('已终止店铺签约');
+      refetchSignedShops();
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || '操作失败');
+    }
+  });
+  
+  // 下载合约处理函数
+  const handleDownloadContract = async (shopId: string, shopName: string) => {
+    try {
+      const response = await teamService.downloadTeamContract(id!, shopId);
+      // 创建下载链接
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      // 从响应头获取文件名或使用默认文件名
+      const contentDisposition = response.headers['content-disposition'];
+      let filename = `${shopName}-合约.pdf`;
+      if (contentDisposition) {
+        const filenameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/);
+        if (filenameMatch && filenameMatch[1]) {
+          filename = filenameMatch[1].replace(/['"]/g, '');
+        }
+      }
+      link.setAttribute('download', filename);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      toast.success('合约下载成功');
+    } catch (error: any) {
+      toast.error(error?.response?.data?.message || '合约下载失败');
+    }
+  };
 
   const { data: teamData, isLoading } = useQuery({
     queryKey: ['team', id],
@@ -306,6 +404,20 @@ export function TeamDetailPage() {
 
   const team: Team = teamData?.data || {} as Team;
   const isOwner = String(team.owner) === String(user?._id);
+  
+  // 检查当前用户是否为战队成员
+  const isTeamMember = () => {
+    if (!user?._id) return false;
+    // 检查 members 数组
+    if (team.members && team.members.length > 0) {
+      return team.members.some((member: any) => {
+        const memberUserId = member.user?._id || member.user;
+        return String(memberUserId) === String(user._id);
+      });
+    }
+    // 如果没有 members 数据，至少检查是否是队长
+    return isOwner;
+  };
 
   const memberRoleConfig: Record<string, { label: string; color: string }> = {
     owner: { label: '队长', color: 'bg-yellow-500/20 text-yellow-500' },
@@ -362,17 +474,18 @@ export function TeamDetailPage() {
           <Badge className="px-3 py-1" style={{ background: 'hsl(220 90% 56% / 0.2)', color: 'hsl(220 90% 70%)' }}>
             {team.settings?.isPublic ? '公开战队' : '私有战队'}
           </Badge>
-          {team.groupChat ? (
+          {team.groupChat && isTeamMember() && (
             <Button 
               variant="default" 
               size="sm"
-              onClick={() => navigate('/messages?tab=group-chats')}
+              onClick={() => navigate(`/messages?groupChatId=${typeof team.groupChat === 'object' ? team.groupChat._id : team.groupChat}`)}
               style={{ background: 'linear-gradient(135deg, hsl(220 90% 56%), hsl(220 85% 65%))' }}
             >
               <MessageSquare className="w-4 h-4 mr-2" />
               进入群聊
             </Button>
-          ) : isOwner && (
+          )}
+          {!team.groupChat && isOwner && (
             <Button 
               variant="default" 
               size="sm"
@@ -399,15 +512,21 @@ export function TeamDetailPage() {
             </Button>
           )}
           {isOwner && (
-            <Button variant="outline" size="sm" onClick={() => { /* TODO: 打开编辑战队对话框 */ }}>
+            <Button variant="outline" size="sm" onClick={() => setShowEditTeamDialog(true)}>
               <Edit2 className="w-4 h-4 mr-2" />
               编辑战队
+            </Button>
+          )}
+          {isOwner && (
+            <Button variant="outline" size="sm" onClick={() => setShowSigningDialog(true)}>
+              <Briefcase className="w-4 h-4 mr-2" />
+              签约管理
             </Button>
           )}
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-5">
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-sm font-medium text-muted-foreground">成员数量</CardTitle>
@@ -440,6 +559,18 @@ export function TeamDetailPage() {
             <div className="text-2xl font-bold">{team.fundPool || 0}</div>
           </CardContent>
         </Card>
+        {isOwner && (
+          <Card className="bg-gradient-to-br from-blue-50 to-indigo-50 border-blue-200">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm font-medium text-blue-600">签约管理</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="text-lg font-bold text-blue-700">
+                {team.signingStats?.activePlayerCount || 0} 名选手 / {team.signingStats?.activeSponsorCount || 0} 家赞助商
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
 
       {/* 捐赠积分按钮 */}
@@ -491,6 +622,14 @@ export function TeamDetailPage() {
           战队库存
         </Button>
         <Button
+          variant={activeTab === 'decks' ? 'default' : 'ghost'}
+          onClick={() => setActiveTab('decks')}
+          className="rounded-b-none"
+        >
+          <Layers className="w-4 h-4 mr-2" />
+          战队构筑
+        </Button>
+        <Button
           variant={activeTab === 'donations' ? 'default' : 'ghost'}
           onClick={() => setActiveTab('donations')}
           className="rounded-b-none"
@@ -514,6 +653,16 @@ export function TeamDetailPage() {
           <Key className="w-4 h-4 mr-2" />
           借用记录
         </Button>
+        {isOwner && (
+          <Button
+            variant={activeTab === 'signing' ? 'default' : 'ghost'}
+            onClick={() => setActiveTab('signing')}
+            className="rounded-b-none"
+          >
+            <Briefcase className="w-4 h-4 mr-2" />
+            签约管理
+          </Button>
+        )}
       </div>
 
       {activeTab === 'members' && (
@@ -884,6 +1033,42 @@ export function TeamDetailPage() {
         </Card>
       )}
 
+      {activeTab === 'decks' && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle>战队构筑共享</CardTitle>
+                <CardDescription>查看和管理战队共享的卡牌构筑</CardDescription>
+              </div>
+              <Button
+                onClick={() => navigate(`/teams/${id}/decks`)}
+                style={{ background: 'linear-gradient(135deg, hsl(220 90% 56%), hsl(220 85% 65%))' }}
+              >
+                <Layers className="w-4 h-4 mr-2" />
+                进入构筑管理
+              </Button>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-center py-12 text-center">
+              <div>
+                <Layers className="w-16 h-16 mx-auto mb-4 opacity-30" style={{ color: 'hsl(220 40% 40%)' }} />
+                <p className="text-lg font-medium mb-2" style={{ color: 'hsl(220 30% 50%)' }}>战队构筑共享</p>
+                <p className="text-sm mb-4" style={{ color: 'hsl(220 30% 40%)' }}>点击按钮进入详细的战队构筑管理页面</p>
+                <Button
+                  onClick={() => navigate(`/teams/${id}/decks`)}
+                  style={{ background: 'linear-gradient(135deg, hsl(220 90% 56%), hsl(220 85% 65%))' }}
+                >
+                  <Layers className="w-4 h-4 mr-2" />
+                  查看构筑
+                </Button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
       {activeTab === 'donations' && (
         <div className="space-y-4">
           <div className="flex items-center justify-between">
@@ -1166,6 +1351,270 @@ export function TeamDetailPage() {
         </div>
       )}
 
+      {/* 签约管理标签页 */}
+      {activeTab === 'signing' && isOwner && (
+        <div className="space-y-6">
+          {/* 统计卡片 */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">签约选手</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{signedPlayers.length}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">赞助商</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{sponsors.length}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">签约店铺</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{signedShops.length}</div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* 签约选手部分 */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>签约选手</CardTitle>
+                  <CardDescription>战队签约的选手名单</CardDescription>
+                </div>
+                {isOwner && (
+                  <Button onClick={() => setShowSignPlayerDialog(true)}>
+                    <UserPlus className="w-4 h-4 mr-2" />
+                    签约选手
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {signedPlayers.length === 0 ? (
+                <div className="text-center py-8">
+                  <Users className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                  <p className="text-muted-foreground">暂无签约选手</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {signedPlayers.map((player: any) => {
+                    const statusMap: Record<string, { label: string; color: string }> = {
+                      active: { label: '活跃', color: 'bg-green-100 text-green-800' },
+                      inactive: { label: '非活跃', color: 'bg-gray-100 text-gray-800' },
+                      retired: { label: '退役', color: 'bg-red-100 text-red-800' },
+                    };
+                    const statusInfo = statusMap[player.status] || statusMap.active;
+                    
+                    return (
+                      <div key={player._id} className="flex items-center justify-between p-4 border rounded-lg">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
+                            <Users className="w-6 h-6 text-primary" />
+                          </div>
+                          <div>
+                            <h4 className="font-medium">{player.player?.username || '未知选手'}</h4>
+                            <p className="text-sm text-muted-foreground">
+                              签约日期: {player.signedAt ? new Date(player.signedAt).toLocaleDateString() : '-'}
+                            </p>
+                            {player.contractEnd && (
+                              <p className="text-sm text-muted-foreground">
+                                合同到期: {new Date(player.contractEnd).toLocaleDateString()}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <Badge className={statusInfo.color}>{statusInfo.label}</Badge>
+                          {isOwner && player.status === 'active' && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-red-500 hover:text-red-600"
+                              onClick={() => {
+                                if (window.confirm('确定要解约该选手吗？')) {
+                                  releasePlayerMutation.mutate(player._id);
+                                }
+                              }}
+                              disabled={releasePlayerMutation.isPending}
+                            >
+                              <UserX className="w-4 h-4 mr-1" />
+                              解约
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 赞助商部分 */}
+          <Card>
+            <CardHeader>
+              <div className="flex items-center justify-between">
+                <div>
+                  <CardTitle>赞助商</CardTitle>
+                  <CardDescription>战队的赞助商列表</CardDescription>
+                </div>
+                {isOwner && (
+                  <Button onClick={() => setShowAddSponsorDialog(true)}>
+                    <PlusCircle className="w-4 h-4 mr-2" />
+                    添加赞助商
+                  </Button>
+                )}
+              </div>
+            </CardHeader>
+            <CardContent>
+              {sponsors.length === 0 ? (
+                <div className="text-center py-8">
+                  <Coins className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                  <p className="text-muted-foreground">暂无赞助商</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {sponsors.map((sponsor: any) => (
+                    <div key={sponsor._id} className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full bg-yellow-500/10 flex items-center justify-center">
+                          <Coins className="w-6 h-6 text-yellow-500" />
+                        </div>
+                        <div>
+                          <h4 className="font-medium">{sponsor.name}</h4>
+                          <p className="text-sm text-muted-foreground">{sponsor.description}</p>
+                          {sponsor.contributionAmount && (
+                            <p className="text-sm font-medium text-primary mt-1">
+                              赞助: {sponsor.contributionAmount}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                      {isOwner && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-red-500 hover:text-red-600"
+                          onClick={() => {
+                            if (window.confirm('确定要移除该赞助商吗？')) {
+                              removeSponsorMutation.mutate(sponsor._id);
+                            }
+                          }}
+                          disabled={removeSponsorMutation.isPending}
+                        >
+                          <X className="w-4 h-4 mr-1" />
+                          移除
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* 签约店铺部分 */}
+          <Card>
+            <CardHeader>
+              <div>
+                <CardTitle>签约店铺</CardTitle>
+                <CardDescription>签约该战队的店铺列表</CardDescription>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {signedShops.length === 0 ? (
+                <div className="text-center py-8">
+                  <Briefcase className="w-12 h-12 mx-auto mb-4 text-muted-foreground opacity-50" />
+                  <p className="text-muted-foreground">暂无签约店铺</p>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {signedShops.map((shopSigning: any) => {
+                    const statusMap: Record<string, { label: string; color: string }> = {
+                      active: { label: '活跃', color: 'bg-green-100 text-green-800' },
+                      expired: { label: '已过期', color: 'bg-yellow-100 text-yellow-800' },
+                      terminated: { label: '已终止', color: 'bg-red-100 text-red-800' },
+                    };
+                    const statusInfo = statusMap[shopSigning.status] || statusMap.active;
+                    
+                    return (
+                      <div key={shopSigning._id} className="space-y-3 p-4 border rounded-lg">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                            <div className="w-12 h-12 rounded-full bg-blue-500/10 flex items-center justify-center">
+                              <Briefcase className="w-6 h-6 text-blue-500" />
+                            </div>
+                            <div>
+                              <h4 className="font-medium">{shopSigning.shop?.name || '未知店铺'}</h4>
+                              <p className="text-sm text-muted-foreground">
+                                签约日期: {shopSigning.signedAt ? new Date(shopSigning.signedAt).toLocaleDateString() : '-'}
+                              </p>
+                              {shopSigning.sponsorshipAmount && (
+                                <p className="text-sm font-medium text-primary mt-1">
+                                  赞助: {shopSigning.sponsorshipAmount}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <Badge className={statusInfo.color}>{statusInfo.label}</Badge>
+                            {isOwner && shopSigning.status === 'active' && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-red-500 hover:text-red-600"
+                                onClick={() => {
+                                  if (window.confirm('确定要终止该店铺的签约吗？')) {
+                                    terminateShopSigningMutation.mutate(shopSigning.shop?._id);
+                                  }
+                                }}
+                                disabled={terminateShopSigningMutation.isPending}
+                              >
+                                <UserX className="w-4 h-4 mr-1" />
+                                终止
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {shopSigning.contractDocument && (
+                          <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
+                            <div className="flex items-center gap-2">
+                              <FileText className="w-5 h-5 text-blue-600" />
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-blue-900">合约已上传</p>
+                                <p className="text-xs text-blue-700">{shopSigning.contractDocument}</p>
+                              </div>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleDownloadContract(shopSigning.shop?._id, shopSigning.shop?.name || '未知店铺')}
+                              >
+                                <Download className="w-4 h-4 mr-1" />
+                                下载
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* 捐赠积分对话框 */}
       <Dialog open={showDonateDialog} onOpenChange={setShowDonateDialog}>
         <DialogContent>
@@ -1333,6 +1782,29 @@ export function TeamDetailPage() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 签约管理对话框 */}
+      <SigningManagementDialog
+        open={showSigningDialog}
+        onOpenChange={setShowSigningDialog}
+        teamId={id}
+        type="team"
+      />
+
+      {/* 签约选手对话框 */}
+      <SignPlayerDialog
+        open={showSignPlayerDialog}
+        onOpenChange={setShowSignPlayerDialog}
+        teamId={id!}
+      />
+
+      {/* 添加赞助商对话框 */}
+      <AddSponsorDialog
+        open={showAddSponsorDialog}
+        onOpenChange={setShowAddSponsorDialog}
+        entityId={id!}
+        entityType="team"
+      />
     </div>
   )
 }

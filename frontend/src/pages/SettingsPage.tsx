@@ -3,14 +3,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
-import { User, Palette, Bell, Copy, Check } from 'lucide-react'
+import { User, Palette, Bell, Copy, Check, Lock } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAuth } from '@/contexts/AuthContext'
 
 export function SettingsPage() {
   const [activeTab, setActiveTab] = useState<'profile' | 'appearance' | 'notifications'>('profile')
   const [copied, setCopied] = useState(false)
-  const { user } = useAuth()
+  const [currentPassword, setCurrentPassword] = useState('')
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [isChangingPassword, setIsChangingPassword] = useState(false)
+  const { user, changePassword } = useAuth()
 
   const handleSave = () => {
     toast.success('设置已保存')
@@ -22,6 +26,38 @@ export function SettingsPage() {
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
       toast.success('UID已复制到剪贴板')
+    }
+  }
+
+  const handleChangePassword = async () => {
+    if (!currentPassword) {
+      toast.error('请输入当前密码')
+      return
+    }
+    if (!newPassword) {
+      toast.error('请输入新密码')
+      return
+    }
+    if (newPassword.length < 6) {
+      toast.error('新密码长度至少为6个字符')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('两次输入的密码不一致')
+      return
+    }
+
+    setIsChangingPassword(true)
+    try {
+      await changePassword(currentPassword, newPassword)
+      toast.success('密码修改成功')
+      setCurrentPassword('')
+      setNewPassword('')
+      setConfirmPassword('')
+    } catch (error: any) {
+      toast.error(error.message || '密码修改失败')
+    } finally {
+      setIsChangingPassword(false)
     }
   }
 
@@ -62,60 +98,108 @@ export function SettingsPage() {
 
       {/* Profile settings */}
       {activeTab === 'profile' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>个人资料</CardTitle>
-            <CardDescription>更新你的个人信息</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid gap-4 md:grid-cols-2">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">用户ID (UID)</label>
-                <div className="flex items-center gap-2">
-                  <Input 
-                    value={user?.uid || '加载中...'} 
-                    readOnly 
-                    className="bg-muted"
-                  />
-                  <Button 
-                    variant="outline" 
-                    size="icon" 
-                    onClick={handleCopyUid}
-                    disabled={!user?.uid}
-                  >
-                    {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                  </Button>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>个人资料</CardTitle>
+              <CardDescription>更新你的个人信息</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">用户ID (UID)</label>
+                  <div className="flex items-center gap-2">
+                    <Input 
+                      value={user?.uid || '加载中...'} 
+                      readOnly 
+                      className="bg-muted"
+                    />
+                    <Button 
+                      variant="outline" 
+                      size="icon" 
+                      onClick={handleCopyUid}
+                      disabled={!user?.uid}
+                    >
+                      {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-muted-foreground">这是你的唯一用户标识，无法修改</p>
                 </div>
-                <p className="text-xs text-muted-foreground">这是你的唯一用户标识，无法修改</p>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">角色</label>
+                  <Badge variant="outline" className="px-3 py-2">
+                    {user?.role === 'superadmin' ? '超级管理员' : user?.role === 'admin' ? '管理员' : '普通用户'}
+                  </Badge>
+                </div>
+              </div>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">用户名</label>
+                  <Input defaultValue={user?.username || '玩家123'} />
+                </div>
+                <div className="space-y-2">
+                  <label className="text-sm font-medium">邮箱</label>
+                  <Input type="email" defaultValue={user?.email || 'player@example.com'} />
+                </div>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">角色</label>
-                <Badge variant="outline" className="px-3 py-2">
-                  {user?.role === 'superadmin' ? '超级管理员' : user?.role === 'admin' ? '管理员' : '普通用户'}
-                </Badge>
+                <label className="text-sm font-medium">个人简介</label>
+                <textarea
+                  className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  placeholder="介绍一下自己..."
+                  defaultValue={user?.bio || '热爱集换式卡牌游戏的玩家'}
+                />
               </div>
-            </div>
-            <div className="grid gap-4 md:grid-cols-2">
+              <Button onClick={handleSave}>保存更改</Button>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Lock className="w-5 h-5" />
+                修改密码
+              </CardTitle>
+              <CardDescription>通过当前密码设置新密码</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium">用户名</label>
-                <Input defaultValue={user?.username || '玩家123'} />
+                <label className="text-sm font-medium">当前密码</label>
+                <Input 
+                  type="password" 
+                  placeholder="请输入当前密码"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                />
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">邮箱</label>
-                <Input type="email" defaultValue={user?.email || 'player@example.com'} />
+                <label className="text-sm font-medium">新密码</label>
+                <Input 
+                  type="password" 
+                  placeholder="请输入新密码（至少6个字符）"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
               </div>
-            </div>
-            <div className="space-y-2">
-              <label className="text-sm font-medium">个人简介</label>
-              <textarea
-                className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                placeholder="介绍一下自己..."
-                defaultValue={user?.bio || '热爱集换式卡牌游戏的玩家'}
-              />
-            </div>
-            <Button onClick={handleSave}>保存更改</Button>
-          </CardContent>
-        </Card>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">确认新密码</label>
+                <Input 
+                  type="password" 
+                  placeholder="请再次输入新密码"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                />
+              </div>
+              <Button 
+                onClick={handleChangePassword} 
+                disabled={isChangingPassword}
+                className="w-full md:w-auto"
+              >
+                {isChangingPassword ? '修改中...' : '修改密码'}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
       )}
 
       {/* Appearance settings */}

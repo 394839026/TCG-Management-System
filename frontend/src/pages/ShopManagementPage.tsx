@@ -15,8 +15,10 @@ import { shopService, Shop, orderService, Order } from '@/services/api'
 import { inventoryService } from '@/services/inventory'
 import { authService, User } from '@/services/auth'
 import { toast } from 'sonner'
-import { Package, Search, Plus, Trash2, ArrowLeft, Boxes, Edit, Users, UserPlus, UserX, LayoutDashboard, MoveUpRight, ShoppingCart, Clock, CheckCircle, XCircle, Eye, MessageCircle } from 'lucide-react'
+import { Package, Search, Plus, Trash2, ArrowLeft, Boxes, Edit, Users, UserPlus, UserX, LayoutDashboard, MoveUpRight, ShoppingCart, Clock, CheckCircle, XCircle, Eye, MessageCircle, Briefcase, Upload, FileText, Download } from 'lucide-react'
 import { formatCurrency } from '@/lib/utils'
+import { SigningManagementDialog } from '@/components/teams/SigningManagementDialog'
+import { SignTeamDialog } from '@/components/shops/SignTeamDialog'
 
 interface ShopInventoryItem {
   _id: string
@@ -125,6 +127,116 @@ export function ShopManagementPage() {
   const [orderStatusFilter, setOrderStatusFilter] = useState<string>('all')
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
   const [orderDetailDialogOpen, setOrderDetailDialogOpen] = useState(false)
+  const [signingDialogOpen, setSigningDialogOpen] = useState(false)
+  const [editSignTeamOpen, setEditSignTeamOpen] = useState(false)
+  const [editingTeam, setEditingTeam] = useState<any>(null)
+  const [contractUploadOpen, setContractUploadOpen] = useState(false)
+  const [selectedContractTeam, setSelectedContractTeam] = useState<any>(null)
+  const [selectedContractFile, setSelectedContractFile] = useState<File | null>(null)
+  
+  // 签约管理相关状态和查询
+  const { data: signedTeamsData, isLoading: signedTeamsLoading, refetch: refetchSignedTeams } = useQuery({
+    queryKey: ['shop-signed-teams', shopId],
+    queryFn: () => shopService.getSignedTeams(shopId!),
+    enabled: !!shopId,
+  })
+  const signedTeams = signedTeamsData?.data || []
+  
+  // 计算签约统计
+  const activeTeamsCount = signedTeams.filter((t: any) => t.status === 'active').length
+  const totalSponsorshipAmount = signedTeams.reduce((sum: number, t: any) => sum + (t.sponsorshipAmount || 0), 0)
+  
+  // 删除签约战队突变
+  const deleteSignTeamMutation = useMutation({
+    mutationFn: async (teamId: string) => {
+      return await shopService.terminateSignedTeam(shopId!, teamId)
+    },
+    onSuccess: () => {
+      toast.success('已解除战队签约')
+      refetchSignedTeams()
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || '解除签约失败')
+    }
+  })
+  
+  // 上传合约突变
+  const uploadContractMutation = useMutation({
+    mutationFn: async ({ teamId, file }: { teamId: string; file: File }) => {
+      const formData = new FormData()
+      formData.append('contract', file)
+      return await shopService.uploadTeamContract(shopId!, teamId, formData)
+    },
+    onSuccess: () => {
+      toast.success('合约上传成功')
+      refetchSignedTeams()
+      setContractUploadOpen(false)
+      setSelectedContractFile(null)
+      setSelectedContractTeam(null)
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || '合约上传失败')
+    }
+  })
+  
+  // 删除合约突变
+  const deleteContractMutation = useMutation({
+    mutationFn: async (teamId: string) => {
+      return await shopService.deleteTeamContract(shopId!, teamId)
+    },
+    onSuccess: () => {
+      toast.success('合约已删除')
+      refetchSignedTeams()
+    },
+    onError: (error: any) => {
+      toast.error(error?.response?.data?.message || '合约删除失败')
+    }
+  })
+  
+  // 编辑签约战队处理函数
+  const handleEditTeam = (team: any) => {
+    setEditingTeam(team)
+    setEditSignTeamOpen(true)
+  }
+  
+  // 删除签约战队处理函数
+  const handleDeleteTeam = (teamId: string) => {
+    if (window.confirm('确定要解除与该战队的签约吗？')) {
+      deleteSignTeamMutation.mutate(teamId)
+    }
+  }
+  
+  // 上传合约处理函数
+  const handleUploadContract = (team: any) => {
+    setSelectedContractTeam(team)
+    setContractUploadOpen(true)
+  }
+  
+  // 删除合约处理函数
+  const handleDeleteContract = (teamId: string) => {
+    if (window.confirm('确定要删除该战队的合约吗？')) {
+      deleteContractMutation.mutate(teamId)
+    }
+  }
+  
+  // 处理合约文件选择
+  const handleContractFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setSelectedContractFile(e.target.files[0])
+    }
+  }
+  
+  // 提交合约上传
+  const handleSubmitContract = () => {
+    if (!selectedContractFile || !selectedContractTeam) {
+      toast.error('请选择合约文件')
+      return
+    }
+    uploadContractMutation.mutate({ 
+      teamId: selectedContractTeam.team, 
+      file: selectedContractFile 
+    })
+  }
   
   // 计算物品已在所有货架上的总数量
   const getTotalOnShelves = (inventoryItemId: string) => {
@@ -578,6 +690,10 @@ export function ShopManagementPage() {
           <TabsTrigger value="employees">
             <Users className="w-4 h-4 mr-2" />
             员工管理
+          </TabsTrigger>
+          <TabsTrigger value="signing">
+            <Briefcase className="w-4 h-4 mr-2" />
+            签约管理
           </TabsTrigger>
         </TabsList>
 
@@ -1205,7 +1321,285 @@ export function ShopManagementPage() {
             </div>
           )}
         </TabsContent>
+
+        {/* 签约管理标签页 */}
+        <TabsContent value="signing" className="space-y-6">
+          {/* 统计卡片 */}
+          <div className="grid gap-4 md:grid-cols-3">
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">签约战队数</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold">{signedTeams.length}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">活跃战队</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-green-600">{activeTeamsCount}</div>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-muted-foreground">赞助总额</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-2xl font-bold text-primary">{formatCurrency(totalSponsorshipAmount)}</div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* 操作按钮和内容 */}
+          <div className="flex justify-between items-center">
+            <h3 className="text-lg font-semibold">战队签约管理</h3>
+            <Button onClick={() => setSigningDialogOpen(true)}>
+              <Plus className="w-4 h-4 mr-2" />
+              签约新战队
+            </Button>
+          </div>
+
+          {/* 签约战队列表 */}
+          {signedTeamsLoading ? (
+            <div className="flex justify-center py-12">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+            </div>
+          ) : signedTeams.length === 0 ? (
+            <Card>
+              <CardContent className="py-12 text-center">
+                <Briefcase className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
+                <p className="text-muted-foreground">暂无签约战队</p>
+                <Button variant="outline" className="mt-4" onClick={() => setSigningDialogOpen(true)}>
+                  <Plus className="w-4 h-4 mr-2" />
+                  签约新战队
+                </Button>
+              </CardContent>
+            </Card>
+          ) : (
+            <div className="space-y-4">
+              {signedTeams.map((signedTeam: any) => {
+                const statusMap: Record<string, { label: string; color: string }> = {
+                  active: { label: '活跃', color: 'bg-green-100 text-green-800' },
+                  expired: { label: '已过期', color: 'bg-yellow-100 text-yellow-800' },
+                  terminated: { label: '已终止', color: 'bg-red-100 text-red-800' },
+                }
+                const statusInfo = statusMap[signedTeam.status] || statusMap.active
+                
+                return (
+                  <Card key={signedTeam._id}>
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between">
+                        <div className="flex items-start gap-3">
+                          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                            <Users className="w-5 h-5 text-primary" />
+                          </div>
+                          <div>
+                            <CardTitle className="text-lg">{signedTeam.teamInfo?.name || '未知战队'}</CardTitle>
+                            {signedTeam.teamInfo?.description && (
+                              <p className="text-sm text-muted-foreground mt-1">{signedTeam.teamInfo.description}</p>
+                            )}
+                          </div>
+                        </div>
+                        <Badge className={statusInfo.color}>{statusInfo.label}</Badge>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <span className="text-muted-foreground">赞助金额:</span>
+                          <p className="font-medium">{formatCurrency(signedTeam.sponsorshipAmount || 0)}</p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">赞助类型:</span>
+                          <p className="font-medium">
+                            {signedTeam.sponsorshipType === 'cash' ? '现金' : 
+                             signedTeam.sponsorshipType === 'product' ? '实物' : 
+                             signedTeam.sponsorshipType === 'service' ? '服务' : '混合'}
+                          </p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">签约日期:</span>
+                          <p className="font-medium">{signedTeam.signedDate ? new Date(signedTeam.signedDate).toLocaleDateString() : '-'}</p>
+                        </div>
+                        <div>
+                          <span className="text-muted-foreground">合同到期:</span>
+                          <p className="font-medium">{signedTeam.contractEnd ? new Date(signedTeam.contractEnd).toLocaleDateString() : '无限制'}</p>
+                        </div>
+                      </div>
+                      {signedTeam.benefits && (
+                        <div className="mt-4 pt-4 border-t">
+                          <p className="text-sm text-muted-foreground mb-1">权益说明:</p>
+                          <p className="text-sm">{signedTeam.benefits}</p>
+                        </div>
+                      )}
+                      {signedTeam.notes && (
+                        <div className="mt-2">
+                          <p className="text-sm text-muted-foreground mb-1">备注:</p>
+                          <p className="text-sm">{signedTeam.notes}</p>
+                        </div>
+                      )}
+                      {signedTeam.contractDocument && (
+                        <div className="mt-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
+                          <div className="flex items-center gap-2">
+                            <FileText className="w-5 h-5 text-blue-600" />
+                            <div className="flex-1">
+                              <p className="text-sm font-medium text-blue-900">合约已上传</p>
+                              <p className="text-xs text-blue-700">{signedTeam.contractDocument}</p>
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="text-red-500 hover:text-red-600 border-red-200 hover:border-red-300"
+                              onClick={() => handleDeleteContract(signedTeam.team)}
+                              disabled={deleteContractMutation.isPending}
+                            >
+                              <Trash2 className="w-4 h-4 mr-1" />
+                              删除
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                      {signedTeam.status === 'active' && (
+                            <div className="mt-4 flex gap-2 flex-wrap">
+                              <Button 
+                                variant="outline" 
+                                size="sm"
+                                onClick={() => handleEditTeam(signedTeam)}
+                              >
+                                <Edit className="w-4 h-4 mr-1" />
+                                编辑
+                              </Button>
+                              {!signedTeam.contractDocument ? (
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={() => handleUploadContract(signedTeam)}
+                                >
+                                  <Upload className="w-4 h-4 mr-1" />
+                                  上传合约
+                                </Button>
+                              ) : (
+                                <Button 
+                                  variant="outline" 
+                                  size="sm"
+                                  onClick={() => handleUploadContract(signedTeam)}
+                                >
+                                  <Upload className="w-4 h-4 mr-1" />
+                                  更新合约
+                                </Button>
+                              )}
+                              <Button 
+                                variant="outline" 
+                                size="sm" 
+                                className="text-red-500 hover:text-red-600"
+                                onClick={() => handleDeleteTeam(signedTeam.team)}
+                                disabled={deleteSignTeamMutation.isPending}
+                              >
+                                <UserX className="w-4 h-4 mr-1" />
+                                解除签约
+                              </Button>
+                            </div>
+                          )}
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          )}
+        </TabsContent>
       </Tabs>
+
+      {/* 签约管理对话框 */}
+      <SigningManagementDialog
+        open={signingDialogOpen}
+        onOpenChange={setSigningDialogOpen}
+        type="shop"
+        shopId={shopId}
+        onSuccess={() => {
+          refetchSignedTeams()
+        }}
+      />
+      
+      {/* 编辑战队签约对话框 */}
+      {editSignTeamOpen && (
+        <SignTeamDialog
+          open={editSignTeamOpen}
+          onOpenChange={(open) => {
+            setEditSignTeamOpen(open)
+            if (!open) setEditingTeam(null)
+          }}
+          shopId={shopId}
+          mode="edit"
+          existingTeam={editingTeam}
+          onSuccess={() => {
+            refetchSignedTeams()
+          }}
+        />
+      )}
+      
+      {/* 合约上传对话框 */}
+      <Dialog open={contractUploadOpen} onOpenChange={(open) => {
+        setContractUploadOpen(open)
+        if (!open) {
+          setSelectedContractFile(null)
+          setSelectedContractTeam(null)
+        }
+      }}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>
+              {selectedContractTeam?.contractDocument ? '更新战队合约' : '上传战队合约'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            {selectedContractTeam && (
+              <div className="p-3 bg-muted rounded-lg">
+                <p className="font-medium">战队: {selectedContractTeam.teamInfo?.name || '未知战队'}</p>
+                {selectedContractTeam.contractDocument && (
+                  <p className="text-sm text-muted-foreground mt-1">
+                    当前合约: {selectedContractTeam.contractDocument}
+                  </p>
+                )}
+              </div>
+            )}
+            
+            <div className="space-y-2">
+              <Label htmlFor="contract-file">选择合约文件</Label>
+              <Input
+                id="contract-file"
+                type="file"
+                accept=".pdf"
+                onChange={handleContractFileChange}
+              />
+              {selectedContractFile && (
+                <p className="text-sm text-muted-foreground">
+                  已选择: {selectedContractFile.name}
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">
+                只支持 PDF 格式，最大 50MB
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => {
+              setContractUploadOpen(false)
+              setSelectedContractFile(null)
+              setSelectedContractTeam(null)
+            }}>
+              取消
+            </Button>
+            <Button 
+              onClick={handleSubmitContract}
+              disabled={!selectedContractFile || uploadContractMutation.isPending}
+            >
+              {uploadContractMutation.isPending ? '上传中...' : (selectedContractTeam?.contractDocument ? '更新合约' : '上传合约')}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 添加物品对话框 */}
       <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>

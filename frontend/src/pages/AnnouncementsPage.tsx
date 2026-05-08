@@ -151,7 +151,7 @@ export function AnnouncementsPage() {
       isPinned: announcement.isPinned,
       isActive: announcement.isActive,
       tags: announcement.tags?.join(', ') || '',
-      expiresAt: announcement.expiresAt ? format(new Date(announcement.expiresAt), 'yyyy-MM-dd') : '',
+      expiresAt: announcement.expiresAt ? formatDateOnly(announcement.expiresAt) : '',
     })
     setEditDialogOpen(true)
   }
@@ -214,18 +214,29 @@ export function AnnouncementsPage() {
         <CardContent className="p-4">
           <div className="flex items-center gap-4 flex-wrap">
             <span className="text-sm text-muted-foreground">类型筛选:</span>
-            <Select value={selectedType} onValueChange={setSelectedType}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="全部类型" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">全部类型</SelectItem>
-                <SelectItem value="update">更新</SelectItem>
-                <SelectItem value="announcement">公告</SelectItem>
-                <SelectItem value="important">重要</SelectItem>
-                <SelectItem value="event">活动</SelectItem>
-              </SelectContent>
-            </Select>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={selectedType === 'all' ? 'default' : 'outline'}
+                size="sm"
+                onClick={() => setSelectedType('all')}
+              >
+                全部类型
+              </Button>
+              {Object.entries(TYPE_CONFIG).map(([type, config]) => {
+                const TypeIcon = config.icon
+                return (
+                  <Button
+                    key={type}
+                    variant={selectedType === type ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => setSelectedType(type)}
+                  >
+                    <TypeIcon className="w-4 h-4 mr-1" />
+                    {config.label}
+                  </Button>
+                )
+              })}
+            </div>
           </div>
         </CardContent>
       </Card>

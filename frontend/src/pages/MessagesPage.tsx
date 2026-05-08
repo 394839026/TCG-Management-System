@@ -17,9 +17,12 @@ import {
   Gift,
   UsersRound,
   UserPlus,
-  Search
+  Search,
+  Eye,
+  AlertCircle
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { EmojiPicker } from '@/components/EmojiPicker'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
 import { 
   friendService, 
@@ -194,13 +197,29 @@ export function MessagesPage() {
     }
 
     const groupChatId = searchParams.get('groupChatId')
+    if (groupChatId) {
+      // 确保活动标签是群聊标签
+      setActiveTab('group-chats')
+      // 如果还没有选中群聊，尝试查找并选中
+      if (!selectedGroupChat && groupChats.length > 0) {
+        const groupChat = groupChats.find((g: GroupChat) => g._id === groupChatId)
+        if (groupChat) {
+          setSelectedGroupChat(groupChat)
+        }
+      }
+    }
+  }, [friendId, conversations, friends, user?._id, searchParams, groupChats, selectedGroupChat])
+
+  // 额外的 useEffect 来处理群聊数据加载完成后的选择
+  useEffect(() => {
+    const groupChatId = searchParams.get('groupChatId')
     if (groupChatId && !selectedGroupChat && groupChats.length > 0) {
       const groupChat = groupChats.find((g: GroupChat) => g._id === groupChatId)
       if (groupChat) {
         setSelectedGroupChat(groupChat)
       }
     }
-  }, [friendId, conversations, friends, user?._id, searchParams, groupChats, selectedGroupChat])
+  }, [groupChats, searchParams, selectedGroupChat])
 
   const sendMessageMutation = useMutation({
     mutationFn: ({ conversationId, content }: { conversationId: string; content: string }) => 
@@ -342,6 +361,12 @@ export function MessagesPage() {
         return <CheckCircle className="w-6 h-6 text-green-500" />
       case 'trade':
         return <MessageCircle className="w-6 h-6 text-purple-500" />
+      case 'inventory_view_request':
+        return <Eye className="w-6 h-6 text-yellow-500" />
+      case 'inventory_view_accepted':
+        return <CheckCircle className="w-6 h-6 text-green-500" />
+      case 'inventory_view_rejected':
+        return <AlertCircle className="w-6 h-6 text-red-500" />
       default:
         return <Bell className="w-6 h-6 text-gray-500" />
     }
@@ -806,6 +831,7 @@ export function MessagesPage() {
 
                 <div className="p-4 border-t">
                   <div className="flex gap-3">
+                    <EmojiPicker onEmojiSelect={(emoji) => setMessageInput(prev => prev + emoji)} />
                     <Input
                       value={messageInput}
                       onChange={(e) => setMessageInput(e.target.value)}
@@ -900,6 +926,7 @@ export function MessagesPage() {
 
                 <div className="p-4 border-t">
                   <div className="flex gap-3">
+                    <EmojiPicker onEmojiSelect={(emoji) => setGroupMessageInput(prev => prev + emoji)} />
                     <Input
                       value={groupMessageInput}
                       onChange={(e) => setGroupMessageInput(e.target.value)}

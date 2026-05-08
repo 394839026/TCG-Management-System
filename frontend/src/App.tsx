@@ -12,6 +12,7 @@ import { InventoryPage } from './pages/InventoryPage'
 import { TeamsPage } from './pages/TeamsPage'
 import { TeamDetailPage } from './pages/TeamDetailPage'
 import { TeamInventoryPage } from './pages/TeamInventoryPage'
+import { TeamDecksPage } from './pages/TeamDecksPage'
 import { ShopsPage } from './pages/ShopsPage'
 import { ShopDashboardPage } from './pages/ShopDashboardPage'
 import { ShopManagementPage } from './pages/ShopManagementPage'
@@ -39,6 +40,10 @@ import { PlatformStorePage } from './pages/PlatformStorePage'
 import { PlatformStoreManagementPage } from './pages/PlatformStoreManagementPage'
 import { GachaProbabilityManager } from './pages/GachaProbabilityManager'
 import { CardTypeManagementPage } from './pages/CardTypeManagementPage'
+import { UserInventoryViewPage } from './pages/UserInventoryViewPage'
+import { RuneBattleCalculatorPage } from './pages/RuneBattleCalculatorPage'
+import { MusicManagementPage } from './pages/MusicManagementPage'
+import { BackpackPage } from './pages/BackpackPage'
 import { useAuth } from './contexts/AuthContext'
 
 // 数据分析页面的保护组件 - 仅管理员和超级管理员可访问
@@ -109,16 +114,20 @@ function App() {
             <Route path="announcements" element={<AnnouncementsPage />} />
             {/* 任务页面 */}
             <Route path="tasks" element={<TasksPage />} />
-            {/* 平台商城页面 */}
+            {/* 智库兑换中心页面 */}
             <Route path="platform-store" element={<PlatformStorePage />} />
             {/* 个人库存页面 */}
             <Route path="inventory" element={<InventoryPage />} />
+            {/* 我的背包页面 */}
+            <Route path="backpack" element={<BackpackPage />} />
             {/* 团队列表页面 */}
             <Route path="teams" element={<TeamsPage />} />
             {/* 团队详情页面 */}
             <Route path="teams/:id" element={<TeamDetailPage />} />
             {/* 团队库存页面 */}
             <Route path="teams/:id/inventory" element={<TeamInventoryPage />} />
+            {/* 团队构筑页面 */}
+            <Route path="teams/:id/decks" element={<TeamDecksPage />} />
             {/* 商店列表页面 */}
             <Route path="shops" element={<ShopsPage />} />
             {/* 商店仪表板 */}
@@ -132,7 +141,9 @@ function App() {
             {/* 卡组详情页面 */}
             <Route path="decks/:id" element={<DeckDetailPage />} />
             {/* 抽卡页面 */}
-            <Route path="gacha" element={<GachaPage />} />
+            <Route path="/gacha" element={<GachaPage />} />
+            {/* 对战工具 */}
+            <Route path="/rune-battle-calculator" element={<RuneBattleCalculatorPage />} />
             {/* 交易市场页面 */}
             <Route path="marketplace" element={<MarketplacePage />} />
             {/* 交易历史页面 */}
@@ -141,6 +152,8 @@ function App() {
             <Route path="messages" element={<MessagesPage />} />
             {/* 好友页面 */}
             <Route path="friends" element={<FriendsPage />} />
+            {/* 查看他人库存页面 */}
+            <Route path="user-inventory/:userId" element={<UserInventoryViewPage />} />
             {/* 团队邀请页面 */}
             <Route path="team-invites" element={<TeamInvitesPage />} />
             {/* 收藏页面 */}
@@ -200,12 +213,21 @@ function App() {
                 </AnalyticsProtectedRoute>
               }
             />
-            {/* 卡牌类型管理页面 - 管理员专属 */}
+            {/* 卡片类型管理页面 - 管理员专属 */}
             <Route
               path="card-type-management"
               element={
                 <AnalyticsProtectedRoute>
                   <CardTypeManagementPage />
+                </AnalyticsProtectedRoute>
+              }
+            />
+            {/* 音乐管理页面 - 管理员专属 */}
+            <Route
+              path="music-management"
+              element={
+                <AnalyticsProtectedRoute>
+                  <MusicManagementPage />
                 </AnalyticsProtectedRoute>
               }
             />

@@ -171,6 +171,11 @@ export const inventoryService = {
     return response.data
   },
 
+  addImageByUrl: async (itemId: string, url: string) => {
+    const response = await apiClient.post(`/inventory/${itemId}/image-url`, { url })
+    return response.data
+  },
+
   deleteImage: async (itemId: string) => {
     const response = await apiClient.delete(`/inventory/${itemId}/image`)
     return response.data

@@ -13,14 +13,24 @@ const platformStoreItemSchema = new mongoose.Schema({
   },
   itemType: {
     type: String,
-    enum: ['inventory_item', 'points', 'exp', 'badge', 'title', 'other'],
+    enum: ['inventory_item', 'points', 'exp', 'badge', 'title', 'physical_item', 'digital_item', 'coupon', 'membership', 'other'],
     default: 'inventory_item'
+  },
+  isPhysical: {
+    type: Boolean,
+    default: false
   },
   // 兑换方式
   currencyType: {
     type: String,
     enum: ['points', 'coins'],
     default: 'points'
+  },
+  // 适用的兑换对象：personal 个人兑换，team 战队兑换，both 两者都可以
+  allowedFor: {
+    type: String,
+    enum: ['personal', 'team', 'both'],
+    default: 'both'
   },
   price: {
     type: Number,

@@ -594,7 +594,7 @@ export function GachaPage() {
             </div>
             <h1 className="text-4xl font-black tracking-wider relative">
               <span className="bg-gradient-to-r from-yellow-400 via-orange-400 to-red-400 bg-clip-text text-transparent drop-shadow-[0_0_10px_rgba(251,191,36,0.8)]">
-                抽卡系统
+                抽卡系统（测试）
               </span>
             </h1>
             <div className="w-12 h-12 rounded-full bg-gradient-to-br from-yellow-400 via-orange-500 to-red-500 flex items-center justify-center shadow-[0_0_30px_rgba(251,191,36,0.6)] animate-[pulse_2s_ease-in-out_infinite]">

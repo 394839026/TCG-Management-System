@@ -347,7 +347,7 @@ export function GroupChatManagementPage() {
                     <div className="flex items-start justify-between">
                       <div className="flex items-center gap-3">
                         <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xl font-bold">
-                          {group.name[0]}
+                          {(group.name || 'G')[0]}
                         </div>
                         <div>
                           <CardTitle className="text-lg">{group.name}</CardTitle>
@@ -450,14 +450,14 @@ export function GroupChatManagementPage() {
               </div>
             ) : (
               <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                {allGroups.map((group: GroupChat) => (
-                  <Card key={group._id} className="hover:shadow-md transition-shadow">
-                    <CardHeader>
-                      <div className="flex items-start justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xl font-bold">
-                            {group.name[0]}
-                          </div>
+              {allGroups.map((group: GroupChat) => (
+                <Card key={group._id} className="hover:shadow-md transition-shadow">
+                  <CardHeader>
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white text-xl font-bold">
+                          {(group.name || 'G')[0]}
+                        </div>
                           <div>
                             <CardTitle className="text-lg">{group.name}</CardTitle>
                             <div className="flex items-center gap-2 mt-1 flex-wrap">
@@ -611,7 +611,7 @@ export function GroupChatManagementPage() {
               <div key={member.user._id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center text-white font-bold">
-                    {member.user.username[0]}
+                    {(member.user.username || 'U')[0]}
                   </div>
                   <div>
                     <div className="font-medium flex items-center gap-2">

@@ -11,6 +11,11 @@ export interface RegisterData {
   password: string
 }
 
+export interface ChangePasswordData {
+  currentPassword: string
+  newPassword: string
+}
+
 export interface User {
   _id: string
   uid: string
@@ -137,6 +142,11 @@ export const authService = {
 
   registerUserByAdmin: async (data: RegisterData & { role?: string }): Promise<{ success: boolean; message: string; data: User }> => {
     const response = await apiClient.post('/auth/admin/register', data)
+    return response.data
+  },
+
+  changePassword: async (data: ChangePasswordData): Promise<{ success: boolean; message: string }> => {
+    const response = await apiClient.put('/auth/change-password', data)
     return response.data
   },
 }

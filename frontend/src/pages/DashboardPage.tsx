@@ -4,7 +4,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
-import { CreditCard, Users, Store, BookOpen, TrendingUp, ArrowRight, Trophy, Coins, Sparkles, CalendarCheck } from 'lucide-react';
+import { CreditCard, Users, Store, BookOpen, TrendingUp, ArrowRight, Trophy, Coins, Sparkles, CalendarCheck, Swords } from 'lucide-react';
 import { inventoryService } from '@/services/inventory';
 import { activityService, Activity } from '@/services/activity';
 import { formatCurrency } from '@/lib/utils';
@@ -254,6 +254,13 @@ export function DashboardPage() {
               <span className="flex items-center gap-2">
                 <CreditCard className="w-4 h-4" />
                 我的库存
+              </span>
+              <ArrowRight className="w-4 h-4" />
+            </Button>
+            <Button variant="outline" className="w-full justify-between h-auto py-3" onClick={() => navigate('/rune-battle-calculator')}>
+              <span className="flex items-center gap-2">
+                <Swords className="w-4 h-4" />
+                对战工具
               </span>
               <ArrowRight className="w-4 h-4" />
             </Button>

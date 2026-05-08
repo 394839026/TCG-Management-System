@@ -6,9 +6,10 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { inventoryService, InventoryItem } from '@/services/inventory'
 import { toast } from 'sonner'
-import { Image, Trash2, Upload } from 'lucide-react'
+import { Image, Trash2, Upload, Link } from 'lucide-react'
 
 interface InventoryTemplateDialogProps {
   open: boolean
@@ -76,21 +77,16 @@ export function InventoryTemplateDialog({ open, onOpenChange, item }: InventoryT
   })
   const [currentImage, setCurrentImage] = useState<string | null>(null)
   const [uploadingImage, setUploadingImage] = useState(false)
+  const [imageUrlInput, setImageUrlInput] = useState('')
+  const [addingImageUrl, setAddingImageUrl] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (item && item.images && item.images.length > 0) {
-      setCurrentImage(item.images[0])
-    } else {
-      setCurrentImage(null)
-    }
-  }, [item, open])
-
-  useEffect(() => {
-    if (item) {
+    if (open && item) {
+      const gameTypeValue = Array.isArray(item.gameType) ? item.gameType[0] : (item.gameType || '')
       setFormData({
         itemName: item.itemName || item.name || '',
-        gameType: item.gameType || '',
+        gameType: gameTypeValue,
         itemType: item.itemType || '',
         rarity: item.rarity || '',
         condition: item.condition || '',
@@ -101,7 +97,12 @@ export function InventoryTemplateDialog({ open, onOpenChange, item }: InventoryT
           cardNumber: '',
         },
       })
-    } else {
+      if (item.images && item.images.length > 0) {
+        setCurrentImage(item.images[0])
+      } else {
+        setCurrentImage(null)
+      }
+    } else if (open && !item) {
       setFormData({
         itemName: '',
         gameType: '',
@@ -115,6 +116,7 @@ export function InventoryTemplateDialog({ open, onOpenChange, item }: InventoryT
           cardNumber: '',
         },
       })
+      setCurrentImage(null)
     }
   }, [item, open])
 
@@ -155,6 +157,7 @@ export function InventoryTemplateDialog({ open, onOpenChange, item }: InventoryT
     try {
       const result = await inventoryService.uploadImage(String(item.id), file)
       setCurrentImage(result.data.images?.[0] || null)
+      queryClient.invalidateQueries({ queryKey: ['inventory-templates'] })
       queryClient.invalidateQueries({ queryKey: ['inventory'] })
       toast.success('图片上传成功')
     } catch (error: any) {
@@ -168,12 +171,45 @@ export function InventoryTemplateDialog({ open, onOpenChange, item }: InventoryT
     }
   }
 
+  const handleImageUrlSubmit = async () => {
+    if (!imageUrlInput.trim()) {
+      toast.error('请输入图片URL')
+      return
+    }
+
+    if (!item?.id) {
+      setCurrentImage(imageUrlInput.trim())
+      setImageUrlInput('')
+      toast.success('图片URL已设置')
+      return
+    }
+
+    setAddingImageUrl(true)
+    try {
+      const result = await inventoryService.addImageByUrl(String(item.id), imageUrlInput.trim())
+      setCurrentImage(result.data.images?.[0] || null)
+      setImageUrlInput('')
+      queryClient.invalidateQueries({ queryKey: ['inventory-templates'] })
+      queryClient.invalidateQueries({ queryKey: ['inventory'] })
+      toast.success('图片添加成功')
+    } catch (error: any) {
+      const message = error?.response?.data?.message || '图片添加失败'
+      toast.error(message)
+    } finally {
+      setAddingImageUrl(false)
+    }
+  }
+
   const handleImageDelete = async () => {
-    if (!item?.id || !currentImage) return
+    if (!item?.id || !currentImage) {
+      setCurrentImage(null)
+      return
+    }
 
     try {
       await inventoryService.deleteImage(String(item.id))
       setCurrentImage(null)
+      queryClient.invalidateQueries({ queryKey: ['inventory-templates'] })
       queryClient.invalidateQueries({ queryKey: ['inventory'] })
       toast.success('图片已删除')
     } catch (error: any) {
@@ -194,6 +230,7 @@ export function InventoryTemplateDialog({ open, onOpenChange, item }: InventoryT
       cardProperty: formData.gameType === 'rune' && formData.itemType === 'card' 
         ? (formData.cardProperty === '无' ? null : formData.cardProperty)
         : undefined,
+      images: !item?.id && currentImage ? [currentImage] : undefined,
     }
 
     if (formData.gameType !== 'rune') {
@@ -396,52 +433,93 @@ export function InventoryTemplateDialog({ open, onOpenChange, item }: InventoryT
 
             <div className="grid gap-2">
               <Label>卡牌图片</Label>
-              <div className="border border-dashed rounded-lg p-4 flex flex-col items-center">
+              <div className="border border-dashed rounded-lg p-4">
                 {currentImage ? (
-                  <div className="relative">
+                  <div className="relative mb-4">
                     <img
                       src={currentImage}
                       alt={item?.itemName || ''}
-                      className="max-h-40 rounded-lg object-contain"
+                      className="max-h-40 mx-auto rounded-lg object-contain"
                     />
-                    {item?.id && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="absolute top-2 right-2 bg-white"
-                        onClick={handleImageDelete}
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </Button>
-                    )}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="absolute top-2 right-2 bg-white"
+                      onClick={handleImageDelete}
+                    >
+                      <Trash2 className="w-3 h-3" />
+                    </Button>
                   </div>
                 ) : (
-                  <div className="text-center text-muted-foreground">
+                  <div className="text-center text-muted-foreground mb-4">
                     <Image className="w-12 h-12 mx-auto mb-2 opacity-50" />
                     <p>暂无图片</p>
                   </div>
                 )}
-                {item?.id && (
-                  <>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="mt-2"
-                      onClick={() => fileInputRef.current?.click()}
-                      disabled={uploadingImage}
-                    >
+
+                <Tabs defaultValue="upload" className="w-full">
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="upload">
                       <Upload className="w-4 h-4 mr-2" />
-                      {uploadingImage ? '上传中...' : '上传图片'}
-                    </Button>
-                    <input
-                      ref={fileInputRef}
-                      type="file"
-                      accept="image/jpeg,image/png,image/gif,image/webp"
-                      onChange={handleImageUpload}
-                      className="hidden"
-                    />
-                  </>
-                )}
+                      上传图片
+                    </TabsTrigger>
+                    <TabsTrigger value="url">
+                      <Link className="w-4 h-4 mr-2" />
+                      图床链接
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="upload" className="mt-4">
+                    {item?.id ? (
+                      <div className="text-center">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => fileInputRef.current?.click()}
+                          disabled={uploadingImage}
+                        >
+                          <Upload className="w-4 h-4 mr-2" />
+                          {uploadingImage ? '上传中...' : '选择文件上传'}
+                        </Button>
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept="image/jpeg,image/png,image/gif,image/webp"
+                          onChange={handleImageUpload}
+                          className="hidden"
+                        />
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground text-center">请先创建模板，然后再上传图片</p>
+                    )}
+                  </TabsContent>
+
+                  <TabsContent value="url" className="mt-4 space-y-3">
+                    <div className="flex gap-2">
+                      <Input
+                        type="url"
+                        placeholder="输入图片URL (https://...)"
+                        value={imageUrlInput}
+                        onChange={(e) => setImageUrlInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            handleImageUrlSubmit()
+                          }
+                        }}
+                      />
+                      <Button
+                        variant="outline"
+                        onClick={handleImageUrlSubmit}
+                        disabled={addingImageUrl || !imageUrlInput.trim()}
+                      >
+                        {addingImageUrl ? '添加中...' : '添加'}
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      支持任意公共图床链接，如：Imgur、Postimages 等
+                    </p>
+                  </TabsContent>
+                </Tabs>
               </div>
             </div>
           </div>

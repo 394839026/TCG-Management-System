@@ -4,7 +4,16 @@ const platformStoreRedemptionSchema = new mongoose.Schema({
   userId: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
-    required: true
+    required: function() {
+      return !this.teamId;
+    }
+  },
+  teamId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Team',
+    required: function() {
+      return !this.userId;
+    }
   },
   storeItem: {
     type: mongoose.Schema.Types.ObjectId,

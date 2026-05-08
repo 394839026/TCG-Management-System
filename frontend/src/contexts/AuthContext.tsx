@@ -13,6 +13,7 @@ interface AuthContextType {
   isAuthenticated: boolean // 是否已认证
   isLoading: boolean // 是否正在加载认证状态
   setUser: (user: User | null) => void // 更新用户信息
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void> // 修改密码函数
 }
 
 // 创建认证上下文
@@ -140,6 +141,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // 修改密码函数
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    try {
+      const response = await authService.changePassword({ currentPassword, newPassword })
+      if (!response.success) {
+        throw new Error(response.message || '密码修改失败')
+      }
+    } catch (error) {
+      console.error('AuthContext: Change password error:', error)
+      throw error
+    }
+  }
+
   // 提供认证上下文给子组件
   return (
     <AuthContext.Provider
@@ -152,6 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isAuthenticated: !!user && !!token,
         isLoading,
         setUser: updateUser,
+        changePassword,
       }}
     >
       {children}

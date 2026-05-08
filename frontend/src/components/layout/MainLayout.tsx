@@ -5,6 +5,7 @@ import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { Button } from '@/components/ui/button'
 import { ExternalLink } from 'lucide-react'
+import { MusicPlayer } from '../MusicPlayer'
 
 // 主布局组件
 export function MainLayout() {
@@ -22,9 +23,9 @@ export function MainLayout() {
               <span className="text-sm font-medium text-muted-foreground">特别鸣谢:</span>
               {/* 赞助商列表 */}
               <div className="flex items-center gap-6">
-                <span className="font-semibold text-primary">赞助商1</span>
-                <span className="text-muted-foreground">赞助商 2</span>
-                <span className="text-muted-foreground">赞助商 3</span>
+                <span className="font-semibold text-primary">沉星之间</span>
+                <span className="font-semibold text-primary">沉星之间</span>
+                <span className="font-semibold text-primary">沉星之间</span>
               </div>
             </div>
             {/* 了解更多按钮 */}
@@ -35,11 +36,13 @@ export function MainLayout() {
         </div>
         {/* 顶部导航栏 */}
         <Header />
-        {/* 页面内容区域 - 使用Outlet渲染子路由 */}
-        <main className="p-6 animate-fade-in">
+        {/* 页面内容区域 - 使用Outlet渲染子路由，为播放器留出底部空间 */}
+        <main className="p-6 animate-fade-in pb-24">
           <Outlet />
         </main>
       </div>
+      {/* 音乐播放器 */}
+      <MusicPlayer />
     </div>
   )
 }

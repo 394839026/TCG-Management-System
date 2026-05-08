@@ -56,6 +56,10 @@ const getItemTypeText = (itemType: string) => {
     case 'exp': return '经验'
     case 'badge': return '徽章'
     case 'title': return '称号'
+    case 'physical_item': return '实物物品'
+    case 'digital_item': return '数字物品'
+    case 'coupon': return '优惠券'
+    case 'membership': return '会员资格'
     default: return '其他'
   }
 }
@@ -66,6 +70,16 @@ const getCurrencyText = (currencyType: string) => {
     case 'points': return '积分'
     case 'coins': return '金币'
     default: return '积分'
+  }
+}
+
+// 获取允许兑换方式对应的文本
+const getAllowedForText = (allowedFor: string) => {
+  switch (allowedFor) {
+    case 'personal': return '仅限个人'
+    case 'team': return '仅限战队'
+    case 'both': return '两者均可'
+    default: return '两者均可'
   }
 }
 
@@ -249,6 +263,9 @@ export function PlatformStoreManagementPage() {
                             已售罄
                           </Badge>
                         )}
+                        <Badge variant="outline">
+                          {getAllowedForText(item.allowedFor || 'both')}
+                        </Badge>
                       </div>
                       <CardDescription className="mt-1">
                         {getItemTypeText(item.itemType)} | {item.price} {getCurrencyText(item.currencyType)}
@@ -385,6 +402,10 @@ export function PlatformStoreManagementPage() {
                     <SelectItem value="exp">经验</SelectItem>
                     <SelectItem value="badge">徽章</SelectItem>
                     <SelectItem value="title">称号</SelectItem>
+                    <SelectItem value="physical_item">实物物品</SelectItem>
+                    <SelectItem value="digital_item">数字物品</SelectItem>
+                    <SelectItem value="coupon">优惠券</SelectItem>
+                    <SelectItem value="membership">会员资格</SelectItem>
                     <SelectItem value="other">其他</SelectItem>
                   </SelectContent>
                 </Select>
@@ -404,6 +425,22 @@ export function PlatformStoreManagementPage() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="createAllowedFor">允许兑换方式</Label>
+              <Select
+                value={createFormData.allowedFor || 'both'}
+                onValueChange={(value) => setCreateFormData({ ...createFormData, allowedFor: value as any })}
+              >
+                <SelectTrigger id="createAllowedFor">
+                  <SelectValue placeholder="选择允许兑换方式" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="both">两者均可</SelectItem>
+                  <SelectItem value="personal">仅限个人兑换</SelectItem>
+                  <SelectItem value="team">仅限战队兑换</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <div className="grid grid-cols-2 gap-4">
               <div className="grid gap-2">
@@ -561,6 +598,10 @@ export function PlatformStoreManagementPage() {
                         <SelectItem value="exp">经验</SelectItem>
                         <SelectItem value="badge">徽章</SelectItem>
                         <SelectItem value="title">称号</SelectItem>
+                        <SelectItem value="physical_item">实物物品</SelectItem>
+                        <SelectItem value="digital_item">数字物品</SelectItem>
+                        <SelectItem value="coupon">优惠券</SelectItem>
+                        <SelectItem value="membership">会员资格</SelectItem>
                         <SelectItem value="other">其他</SelectItem>
                       </SelectContent>
                     </Select>
@@ -580,6 +621,22 @@ export function PlatformStoreManagementPage() {
                       </SelectContent>
                     </Select>
                   </div>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="editAllowedFor">允许兑换方式</Label>
+                  <Select
+                    value={editFormData.allowedFor || 'both'}
+                    onValueChange={(value) => setEditFormData({ ...editFormData, allowedFor: value as any })}
+                  >
+                    <SelectTrigger id="editAllowedFor">
+                      <SelectValue placeholder="选择允许兑换方式" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="both">两者均可</SelectItem>
+                      <SelectItem value="personal">仅限个人兑换</SelectItem>
+                      <SelectItem value="team">仅限战队兑换</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid grid-cols-2 gap-4">
                   <div className="grid gap-2">

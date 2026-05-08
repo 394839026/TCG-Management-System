@@ -190,13 +190,174 @@ const shopSchema = new mongoose.Schema({
     }
   }],
   settings: {
-    isPublic: { 
-      type: Boolean, 
-      default: true 
+    isPublic: {
+      type: Boolean,
+      default: true
     },
-    showSalesRecords: { 
-      type: Boolean, 
-      default: false 
+    showSalesRecords: {
+      type: Boolean,
+      default: false
+    }
+  },
+  // 赞助商列表
+  sponsors: [{
+    name: {
+      type: String,
+      required: [true, '赞助商名称是必填项']
+    },
+    logo: {
+      type: String,
+      default: ''
+    },
+    contactPerson: {
+      type: String,
+      default: ''
+    },
+    contactPhone: {
+      type: String,
+      default: ''
+    },
+    contactEmail: {
+      type: String,
+      default: ''
+    },
+    sponsorshipAmount: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    sponsorshipType: {
+      type: String,
+      enum: ['cash', 'product', 'service', 'mixed'],
+      default: 'cash'
+    },
+    contractStart: {
+      type: Date
+    },
+    contractEnd: {
+      type: Date
+    },
+    status: {
+      type: String,
+      enum: ['active', 'expired', 'terminated'],
+      default: 'active'
+    },
+    contractDocument: {
+      type: String,
+      default: ''
+    },
+    benefits: {
+      type: String,
+      default: '',
+      maxlength: [1000, '权益描述不能超过1000个字符']
+    },
+    notes: {
+      type: String,
+      default: '',
+      maxlength: [500, '备注不能超过500个字符']
+    },
+    signedDate: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  // 签约战队列表
+  signedTeams: [{
+    team: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Team',
+      required: true
+    },
+    sponsorshipAmount: {
+      type: Number,
+      default: 0,
+      min: 0
+    },
+    sponsorshipType: {
+      type: String,
+      enum: ['cash', 'product', 'service', 'mixed'],
+      default: 'cash'
+    },
+    contractStart: {
+      type: Date
+    },
+    contractEnd: {
+      type: Date
+    },
+    status: {
+      type: String,
+      enum: ['active', 'expired', 'terminated'],
+      default: 'active'
+    },
+    contractDocument: {
+      type: String,
+      default: ''
+    },
+    benefits: {
+      type: String,
+      default: '',
+      maxlength: [1000, '权益描述不能超过1000个字符']
+    },
+    notes: {
+      type: String,
+      default: '',
+      maxlength: [500, '备注不能超过500个字符']
+    },
+    signedDate: {
+      type: Date,
+      default: Date.now
+    }
+  }],
+  // 签约记录
+  signingRecords: [{
+    type: {
+      type: String,
+      enum: ['sponsor', 'team'],
+      required: true
+    },
+    targetId: {
+      type: mongoose.Schema.Types.ObjectId,
+      required: true
+    },
+    targetName: {
+      type: String,
+      required: true
+    },
+    action: {
+      type: String,
+      enum: ['sign', 'renew', 'terminate', 'expire'],
+      required: true
+    },
+    amount: {
+      type: Number,
+      default: 0
+    },
+    date: {
+      type: Date,
+      default: Date.now
+    },
+    operator: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User'
+    },
+    notes: {
+      type: String,
+      default: ''
+    }
+  }],
+  // 签约统计
+  signingStats: {
+    totalSponsorshipRevenue: {
+      type: Number,
+      default: 0
+    },
+    activeSponsorCount: {
+      type: Number,
+      default: 0
+    },
+    activeTeamCount: {
+      type: Number,
+      default: 0
     }
   },
   createdAt: { 

@@ -6,6 +6,8 @@ const UserInventory = require('../models/UserInventory');
 const UserStatsHistory = require('../models/UserStatsHistory');
 const Task = require('../models/Task');
 const UserTask = require('../models/UserTask');
+const InventoryViewRequest = require('../models/InventoryViewRequest');
+const User = require('../models/User');
 const { filterSensitiveFields, USER_INVENTORY_ALLOWED } = require('../utils/security');
 
 // 辅助函数：获取周期的开始时间
@@ -468,6 +470,198 @@ router.put('/:id', protect, async (req, res) => {
       data: userInventory,
       tasksUpdated: taskResult.updated,
       completedTasks: taskResult.completedTasks
+    });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// 查看他人库存
+router.get('/user/:userId', protect, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { itemType, search, sort = 'createdAt', order = 'desc', page = 1, limit, rarity, gameType, showZeroQuantity, version, cardProperty } = req.query;
+    
+    // 如果是查看自己的库存，直接返回
+    if (userId === req.user._id.toString()) {
+      return res.redirect('/api/user-inventory');
+    }
+
+    // 检查是否有查看权限
+    const permission = await InventoryViewRequest.findOne({
+      requester: req.user._id,
+      owner: userId,
+      status: 'accepted'
+    });
+
+    if (!permission || permission.isExpired()) {
+      return res.status(403).json({ 
+        success: false, 
+        message: '您没有权限查看该用户的库存，请先申请查看权限' 
+      });
+    }
+
+    // 获取用户信息
+    const ownerUser = await User.findById(userId).select('username avatar');
+    if (!ownerUser) {
+      return res.status(404).json({ message: '用户不存在' });
+    }
+
+    console.log('=== 查看他人库存 ===');
+    console.log('查看用户:', ownerUser.username);
+    
+    // 用户库存只获取非模板的数据
+    const query = { isTemplate: { $ne: true } };
+
+    if (itemType && itemType !== 'all') {
+      if (itemType.includes(',')) {
+        query.itemType = { $in: itemType.split(',') };
+      } else {
+        query.itemType = itemType;
+      }
+    }
+
+    if (search) {
+      const searchRegex = { $regex: search, $options: 'i' };
+      const searchConditions = [
+        { itemName: searchRegex },
+        { itemCode: searchRegex },
+        { 'runeCardInfo.cardNumber': searchRegex }
+      ];
+      
+      if (query.$or) {
+        const gameTypeConditions = query.$or;
+        delete query.$or;
+        query.$and = [
+          { $or: searchConditions },
+          { $or: gameTypeConditions }
+        ];
+      } else {
+        query.$or = searchConditions;
+      }
+    }
+
+    if (rarity && rarity !== 'all') {
+      if (rarity.includes(',')) {
+        query.rarity = { $in: rarity.split(',') };
+      } else {
+        query.rarity = rarity;
+      }
+    }
+
+    if (gameType && gameType !== 'all') {
+      const gameTypeCondition = {
+        $or: [
+          { gameType: gameType },
+          { gameType: { $elemMatch: { $eq: gameType } } }
+        ]
+      };
+      
+      if (query.$and) {
+        query.$and.push(gameTypeCondition);
+      } else if (query.$or) {
+        const existingOr = query.$or;
+        delete query.$or;
+        query.$and = [
+          { $or: existingOr },
+          gameTypeCondition
+        ];
+      } else {
+        Object.assign(query, gameTypeCondition);
+      }
+    }
+
+    if (version && version !== 'all') {
+      if (version.includes(',')) {
+        query['runeCardInfo.version'] = { $in: version.split(',') };
+      } else {
+        query['runeCardInfo.version'] = version;
+      }
+    }
+
+    if (cardProperty && cardProperty !== 'all') {
+      if (cardProperty.includes(',')) {
+        query.cardProperty = { $in: cardProperty.split(',') };
+      } else {
+        query.cardProperty = cardProperty;
+      }
+    }
+
+    const sortOrder = order === 'asc' ? 1 : -1;
+    let sortOptions = { [sort]: sortOrder };
+
+    if (sort === 'userQuantity') {
+      sortOptions = {};
+    }
+
+    const items = await InventoryItem.find(query).sort(sortOptions);
+    console.log('数据库物品总数:', items.length);
+
+    const userInventory = await UserInventory.find({ userId: userId });
+    console.log('用户拥有的库存记录数:', userInventory.length);
+    
+    const userInventoryMap = new Map();
+    userInventory.forEach(ui => {
+      userInventoryMap.set(ui.inventoryItemId.toString(), ui);
+    });
+
+    let itemsWithUserInfo = items.map(item => {
+      const userItem = userInventoryMap.get(item._id.toString());
+      return {
+        ...item.toObject(),
+        userQuantity: userItem?.quantity || 0,
+        userValue: userItem?.value || 0,
+        // 不返回收藏、笔记等私人信息
+      };
+    });
+
+    if (showZeroQuantity === 'false') {
+      itemsWithUserInfo = itemsWithUserInfo.filter(item => item.userQuantity > 0);
+    }
+
+    if (sort === 'userQuantity') {
+      itemsWithUserInfo.sort((a, b) => {
+        return sortOrder * (a.userQuantity - b.userQuantity);
+      });
+    } else if (sort === 'userValue') {
+      itemsWithUserInfo.sort((a, b) => {
+        return sortOrder * (a.userValue - b.userValue);
+      });
+    }
+
+    // 计算总数
+    const total = itemsWithUserInfo.length;
+    
+    // 分页
+    let paginatedItems = itemsWithUserInfo;
+    if (limit) {
+      const startIndex = (parseInt(page) - 1) * parseInt(limit);
+      const endIndex = startIndex + parseInt(limit);
+      paginatedItems = itemsWithUserInfo.slice(startIndex, endIndex);
+    }
+
+    // 计算简单统计信息
+    const totalQuantity = userInventory.reduce((sum, ui) => sum + ui.quantity, 0);
+    const totalValue = userInventory.reduce((sum, ui) => sum + (ui.quantity * ui.value), 0);
+    
+    const itemsWithQuantity = userInventory.filter(ui => ui.quantity > 0);
+    const totalItems = itemsWithQuantity.length;
+
+    res.json({
+      success: true,
+      count: paginatedItems.length,
+      total,
+      page: parseInt(page),
+      pages: limit ? Math.ceil(total / parseInt(limit)) : 1,
+      data: paginatedItems,
+      owner: ownerUser,
+      stats: {
+        totalItems,
+        totalQuantity,
+        totalValue
+      },
+      permissionExpiresAt: permission.expiresAt
     });
   } catch (error) {
     console.error(error);

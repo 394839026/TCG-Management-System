@@ -33,23 +33,28 @@ import {
   Settings as SettingsIcon,
   History,
   Layers,
+  Swords,
+  Music,
+  Backpack,
 } from 'lucide-react'
 
 const userNavigation = [
-  { name: '个人主页', href: '/dashboard', icon: LayoutDashboard },
   { name: '公告中心', href: '/announcements', icon: Bell },
+  { name: '个人中心', href: '/dashboard', icon: LayoutDashboard },
   { name: '任务中心', href: '/tasks', icon: Trophy },
-  { name: '智库兑换窗口', href: '/platform-store', icon: Gift },
   { name: '个人库存管理', href: '/inventory', icon: CreditCard },
-  { name: '战队', href: '/teams', icon: Users },
-  { name: '店铺列表', href: '/shops', icon: Store },
+  { name: '我的背包', href: '/backpack', icon: Backpack },
+  { name: '智库兑换中心', href: '/platform-store', icon: ShoppingCart },
   { name: '卡组构筑', href: '/deck-building', icon: Crown },
   { name: '卡组管理', href: '/decks', icon: BookOpen },
-  { name: '抽卡模拟器', href: '/gacha', icon: Sparkles },
+  { name: '战队', href: '/teams', icon: Users },
+  { name: '店铺列表', href: '/shops', icon: Store },
   { name: '星网订单', href: '/marketplace', icon: Repeat },
-  { name: '消息中心', href: '/messages', icon: MessageCircle },
-  { name: '好友系统', href: '/friends', icon: Users2 },
   { name: '我的订单与收藏', href: '/favorites', icon: Heart },
+  { name: '好友系统', href: '/friends', icon: Users2 },
+  { name: '消息中心', href: '/messages', icon: MessageCircle },
+  { name: '抽卡模拟器（测试）', href: '/gacha', icon: Sparkles },
+  { name: '对战工具', href: '/rune-battle-calculator', icon: Swords },
 ]
 
 const adminNavigation = [
@@ -58,6 +63,7 @@ const adminNavigation = [
   { name: '智库兑换窗口管理', href: '/platform-store-management', icon: StoreIcon },
   { name: '卡片类型管理', href: '/card-type-management', icon: Layers },
   { name: '抽卡概率管理', href: '/gacha-probability', icon: SettingsIcon },
+  { name: '音乐管理', href: '/music-management', icon: Music },
 ]
 
 const superadminNavigation = [
@@ -91,7 +97,8 @@ export function Sidebar({ className }: SidebarProps) {
     '/card-type-management',
     '/permissions',
     '/inventory-data-management',
-    '/gacha-probability'
+    '/gacha-probability',
+    '/music-management'
   ].some(path => location.pathname.startsWith(path))
 
   // 上次的路径，用于检测路径变化

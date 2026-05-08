@@ -4,11 +4,14 @@ const { protect } = require('../middleware/auth');
 const abac = require('../middleware/abac');
 const Team = require('../models/Team');
 const User = require('../models/User');
+const Shop = require('../models/Shop');
 const TeamJoinRequest = require('../models/TeamJoinRequest');
 const TeamInvite = require('../models/TeamInvite');
 const Notification = require('../models/Notification');
 const { GroupChat } = require('../models/GroupChat');
 const { body, validationResult } = require('express-validator');
+const path = require('path');
+const fs = require('fs');
 
 // @route   POST /api/teams
 // @desc    创建战队
@@ -116,6 +119,35 @@ router.get('/my-invites', protect, async (req, res) => {
   } catch (error) {
     console.error('获取我的邀请错误:', error);
     res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   GET /api/teams/my
+// @desc    获取用户所属的战队列表
+// @access  Private
+router.get('/my', protect, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    
+    // 查找用户是队长的战队
+    const ownedTeams = await Team.find({ owner: userId })
+      .populate('owner', 'username avatar');
+    
+    // 查找用户是成员的战队
+    const memberTeams = await Team.find({ 
+      'members.user': userId,
+      owner: { $ne: userId }
+    }).populate('owner', 'username avatar');
+    
+    const allTeams = [...ownedTeams, ...memberTeams];
+    
+    res.json({
+      success: true,
+      data: allTeams
+    });
+  } catch (error) {
+    console.error('获取用户战队列表错误:', error);
+    res.status(500).json({ success: false, message: '服务器错误' });
   }
 });
 
@@ -1454,6 +1486,745 @@ router.post('/:id/create-group-chat', protect, abac({ resource: 'team', actions:
     });
   } catch (error) {
     console.error('创建战队群聊错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// ==================== 签约管理 API ====================
+
+// @route   POST /api/teams/:id/signing/player
+// @desc    签约选手
+// @access  Private (owner/manager)
+router.post('/:id/signing/player', protect, abac({ resource: 'team', actions: ['write'] }), [
+  body('playerId').notEmpty().withMessage('选手ID是必填项')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { playerId, signingFee, contractStart, contractEnd, role, monthlySalary, notes } = req.body;
+
+    const team = await Team.findById(req.params.id);
+    if (!team) {
+      return res.status(404).json({ message: '战队不存在' });
+    }
+
+    // 检查是否是队长或管理员
+    const isOwner = team.owner.toString() === req.user._id.toString();
+    const isManager = team.members.some(m => m.user.toString() === req.user._id.toString() && ['owner', 'leader', 'manager'].includes(m.role));
+    const isAdmin = req.user.role === 'superadmin';
+
+    if (!isOwner && !isManager && !isAdmin) {
+      return res.status(403).json({ message: '只有队长、管理员或超级管理员可以签约选手' });
+    }
+
+    // 查找选手用户
+    const playerUser = await User.findById(playerId);
+    if (!playerUser) {
+      return res.status(404).json({ message: '用户不存在' });
+    }
+
+    // 检查是否已经是签约选手
+    const existingSignedPlayer = team.signedPlayers?.find(p => p.player.toString() === playerId);
+    if (existingSignedPlayer) {
+      return res.status(400).json({ message: '该选手已经在签约列表中' });
+    }
+
+    // 添加签约选手
+    if (!team.signedPlayers) {
+      team.signedPlayers = [];
+    }
+
+    const newSignedPlayer = {
+      player: playerId,
+      signingFee: signingFee || 0,
+      signingDate: new Date(),
+      contractStart: contractStart || new Date(),
+      contractEnd: contractEnd || null,
+      status: 'active',
+      role: role || 'starter',
+      monthlySalary: monthlySalary || 0,
+      notes: notes || ''
+    };
+
+    team.signedPlayers.push(newSignedPlayer);
+
+    // 更新签约统计
+    if (!team.signingStats) {
+      team.signingStats = {};
+    }
+    team.signingStats.totalSigningFees = (team.signingStats.totalSigningFees || 0) + (signingFee || 0);
+    team.signingStats.activePlayerCount = team.signedPlayers.filter(p => p.status === 'active').length;
+
+    // 添加签约记录
+    if (!team.signingRecords) {
+      team.signingRecords = [];
+    }
+    team.signingRecords.push({
+      type: 'player',
+      targetId: playerId,
+      targetName: playerUser.username,
+      action: 'sign',
+      amount: signingFee || 0,
+      date: new Date(),
+      operator: req.user._id,
+      notes: notes || ''
+    });
+
+    await team.save();
+
+    // 发送通知给被签约的选手
+    if (playerId !== req.user._id.toString()) {
+      const notification = new Notification({
+        recipient: playerId,
+        type: 'system',
+        title: '签约通知',
+        content: `恭喜！你已与战队「${team.name}」成功签约！`,
+        relatedId: team._id,
+      });
+      await notification.save();
+    }
+
+    res.status(201).json({
+      success: true,
+      message: '选手签约成功',
+      data: team.signedPlayers[team.signedPlayers.length - 1]
+    });
+  } catch (error) {
+    console.error('签约选手错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   GET /api/teams/:id/signing/players
+// @desc    获取签约选手列表
+// @access  Private (成员)
+router.get('/:id/signing/players', protect, async (req, res) => {
+  try {
+    const team = await Team.findById(req.params.id);
+    if (!team) {
+      return res.status(404).json({ message: '战队不存在' });
+    }
+
+    // 检查是否是成员
+    const isMember = team.members.some(m => m.user.toString() === req.user._id.toString());
+    const isOwner = team.owner.toString() === req.user._id.toString();
+    const isSignedPlayer = team.signedPlayers?.some(p => p.player.toString() === req.user._id.toString());
+
+    if (!isMember && !isOwner && !isSignedPlayer && req.user.role !== 'superadmin') {
+      return res.status(403).json({ message: '只有战队成员或签约选手可以查看签约列表' });
+    }
+
+    // 填充选手信息
+    const enrichedSignedPlayers = await Promise.all(
+      (team.signedPlayers || []).map(async (signedPlayer) => {
+        try {
+          const playerUser = await User.findById(signedPlayer.player).select('username avatar email');
+          return {
+            ...signedPlayer.toObject(),
+            playerInfo: playerUser ? { _id: playerUser._id, username: playerUser.username, avatar: playerUser.avatar, email: playerUser.email } : null
+          };
+        } catch (err) {
+          return signedPlayer;
+        }
+      })
+    );
+
+    res.json({
+      success: true,
+      data: enrichedSignedPlayers
+    });
+  } catch (error) {
+    console.error('获取签约选手列表错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   PUT /api/teams/:id/signing/players/:playerId
+// @desc    更新签约选手信息
+// @access  Private (owner/manager)
+router.put('/:id/signing/players/:playerId', protect, abac({ resource: 'team', actions: ['write'] }), async (req, res) => {
+  try {
+    const { signingFee, contractStart, contractEnd, status, role, monthlySalary, notes } = req.body;
+
+    const team = await Team.findById(req.params.id);
+    if (!team) {
+      return res.status(404).json({ message: '战队不存在' });
+    }
+
+    // 检查是否是队长或管理员
+    const isOwner = team.owner.toString() === req.user._id.toString();
+    const isManager = team.members.some(m => m.user.toString() === req.user._id.toString() && ['owner', 'leader', 'manager'].includes(m.role));
+    const isAdmin = req.user.role === 'superadmin';
+
+    if (!isOwner && !isManager && !isAdmin) {
+      return res.status(403).json({ message: '只有队长、管理员或超级管理员可以更新签约信息' });
+    }
+
+    const signedPlayer = team.signedPlayers?.find(p => p.player.toString() === req.params.playerId);
+    if (!signedPlayer) {
+      return res.status(404).json({ message: '签约选手不存在' });
+    }
+
+    // 计算签约费变化
+    const oldSigningFee = signedPlayer.signingFee || 0;
+    const newSigningFee = signingFee !== undefined ? signingFee : oldSigningFee;
+    const feeDifference = newSigningFee - oldSigningFee;
+
+    // 更新字段
+    if (signingFee !== undefined) signedPlayer.signingFee = signingFee;
+    if (contractStart !== undefined) signedPlayer.contractStart = contractStart;
+    if (contractEnd !== undefined) signedPlayer.contractEnd = contractEnd;
+    if (status !== undefined) signedPlayer.status = status;
+    if (role !== undefined) signedPlayer.role = role;
+    if (monthlySalary !== undefined) signedPlayer.monthlySalary = monthlySalary;
+    if (notes !== undefined) signedPlayer.notes = notes;
+
+    // 更新签约统计
+    if (feeDifference !== 0) {
+      team.signingStats.totalSigningFees = (team.signingStats.totalSigningFees || 0) + feeDifference;
+    }
+    team.signingStats.activePlayerCount = team.signedPlayers.filter(p => p.status === 'active').length;
+
+    // 添加签约记录
+    const playerUser = await User.findById(req.params.playerId).select('username');
+    team.signingRecords.push({
+      type: 'player',
+      targetId: req.params.playerId,
+      targetName: playerUser ? playerUser.username : '未知',
+      action: status === 'terminated' ? 'terminate' : (status === 'expired' ? 'expire' : 'renew'),
+      amount: feeDifference,
+      date: new Date(),
+      operator: req.user._id,
+      notes: notes || ''
+    });
+
+    await team.save();
+
+    res.json({
+      success: true,
+      message: '签约选手信息已更新',
+      data: signedPlayer
+    });
+  } catch (error) {
+    console.error('更新签约选手错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   DELETE /api/teams/:id/signing/players/:playerId
+// @desc    解除签约选手
+// @access  Private (owner/manager)
+router.delete('/:id/signing/players/:playerId', protect, abac({ resource: 'team', actions: ['write'] }), async (req, res) => {
+  try {
+    const { reason } = req.body;
+
+    const team = await Team.findById(req.params.id);
+    if (!team) {
+      return res.status(404).json({ message: '战队不存在' });
+    }
+
+    // 检查是否是队长或管理员
+    const isOwner = team.owner.toString() === req.user._id.toString();
+    const isManager = team.members.some(m => m.user.toString() === req.user._id.toString() && ['owner', 'leader', 'manager'].includes(m.role));
+    const isAdmin = req.user.role === 'superadmin';
+
+    if (!isOwner && !isManager && !isAdmin) {
+      return res.status(403).json({ message: '只有队长、管理员或超级管理员可以解除签约' });
+    }
+
+    const signedPlayerIndex = team.signedPlayers?.findIndex(p => p.player.toString() === req.params.playerId);
+    if (signedPlayerIndex === -1 || signedPlayerIndex === undefined) {
+      return res.status(404).json({ message: '签约选手不存在' });
+    }
+
+    const removedPlayer = team.signedPlayers[signedPlayerIndex];
+    const playerUser = await User.findById(req.params.playerId).select('username');
+
+    // 添加签约记录
+    team.signingRecords.push({
+      type: 'player',
+      targetId: req.params.playerId,
+      targetName: playerUser ? playerUser.username : '未知',
+      action: 'terminate',
+      amount: 0,
+      date: new Date(),
+      operator: req.user._id,
+      notes: reason || '解除签约'
+    });
+
+    // 更新签约统计
+    team.signingStats.activePlayerCount = team.signedPlayers.filter(p => p.status === 'active' && p.player.toString() !== req.params.playerId).length;
+
+    // 移除签约选手
+    team.signedPlayers.splice(signedPlayerIndex, 1);
+
+    await team.save();
+
+    // 发送通知给被解除签约的选手
+    if (req.params.playerId !== req.user._id.toString()) {
+      const notification = new Notification({
+        recipient: req.params.playerId,
+        type: 'system',
+        title: '签约解除通知',
+        content: `很遗憾，你与战队「${team.name}」的签约已被解除。`,
+        relatedId: team._id,
+      });
+      await notification.save();
+    }
+
+    res.json({
+      success: true,
+      message: '已解除签约'
+    });
+  } catch (error) {
+    console.error('解除签约选手错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   POST /api/teams/:id/signing/sponsor
+// @desc    签约赞助商
+// @access  Private (owner/manager)
+router.post('/:id/signing/sponsor', protect, abac({ resource: 'team', actions: ['write'] }), [
+  body('name').notEmpty().withMessage('赞助商名称是必填项')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { name, logo, contactPerson, contactPhone, contactEmail, sponsorshipAmount, sponsorshipType, contractStart, contractEnd, benefits, notes } = req.body;
+
+    const team = await Team.findById(req.params.id);
+    if (!team) {
+      return res.status(404).json({ message: '战队不存在' });
+    }
+
+    // 检查是否是队长或管理员
+    const isOwner = team.owner.toString() === req.user._id.toString();
+    const isManager = team.members.some(m => m.user.toString() === req.user._id.toString() && ['owner', 'leader', 'manager'].includes(m.role));
+    const isAdmin = req.user.role === 'superadmin';
+
+    if (!isOwner && !isManager && !isAdmin) {
+      return res.status(403).json({ message: '只有队长、管理员或超级管理员可以签约赞助商' });
+    }
+
+    // 添加赞助商
+    if (!team.sponsors) {
+      team.sponsors = [];
+    }
+
+    const newSponsor = {
+      name,
+      logo: logo || '',
+      contactPerson: contactPerson || '',
+      contactPhone: contactPhone || '',
+      contactEmail: contactEmail || '',
+      sponsorshipAmount: sponsorshipAmount || 0,
+      sponsorshipType: sponsorshipType || 'cash',
+      contractStart: contractStart || new Date(),
+      contractEnd: contractEnd || null,
+      status: 'active',
+      benefits: benefits || '',
+      notes: notes || '',
+      signedDate: new Date()
+    };
+
+    team.sponsors.push(newSponsor);
+
+    // 更新签约统计
+    if (!team.signingStats) {
+      team.signingStats = {};
+    }
+    team.signingStats.totalSponsorshipRevenue = (team.signingStats.totalSponsorshipRevenue || 0) + (sponsorshipAmount || 0);
+    team.signingStats.activeSponsorCount = team.sponsors.filter(s => s.status === 'active').length;
+
+    // 添加签约记录
+    if (!team.signingRecords) {
+      team.signingRecords = [];
+    }
+    team.signingRecords.push({
+      type: 'sponsor',
+      targetId: team.sponsors[team.sponsors.length - 1]._id,
+      targetName: name,
+      action: 'sign',
+      amount: sponsorshipAmount || 0,
+      date: new Date(),
+      operator: req.user._id,
+      notes: notes || ''
+    });
+
+    await team.save();
+
+    res.status(201).json({
+      success: true,
+      message: '赞助商签约成功',
+      data: team.sponsors[team.sponsors.length - 1]
+    });
+  } catch (error) {
+    console.error('签约赞助商错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   GET /api/teams/:id/signing/sponsors
+// @desc    获取赞助商列表
+// @access  Private (成员)
+router.get('/:id/signing/sponsors', protect, async (req, res) => {
+  try {
+    const team = await Team.findById(req.params.id);
+    if (!team) {
+      return res.status(404).json({ message: '战队不存在' });
+    }
+
+    // 检查是否是成员
+    const isMember = team.members.some(m => m.user.toString() === req.user._id.toString());
+    const isOwner = team.owner.toString() === req.user._id.toString();
+
+    if (!isMember && !isOwner && req.user.role !== 'superadmin') {
+      return res.status(403).json({ message: '只有战队成员可以查看赞助商列表' });
+    }
+
+    res.json({
+      success: true,
+      data: team.sponsors || []
+    });
+  } catch (error) {
+    console.error('获取赞助商列表错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   PUT /api/teams/:id/signing/sponsors/:sponsorId
+// @desc    更新赞助商信息
+// @access  Private (owner/manager)
+router.put('/:id/signing/sponsors/:sponsorId', protect, abac({ resource: 'team', actions: ['write'] }), async (req, res) => {
+  try {
+    const { name, logo, contactPerson, contactPhone, contactEmail, sponsorshipAmount, sponsorshipType, contractStart, contractEnd, status, benefits, notes } = req.body;
+
+    const team = await Team.findById(req.params.id);
+    if (!team) {
+      return res.status(404).json({ message: '战队不存在' });
+    }
+
+    // 检查是否是队长或管理员
+    const isOwner = team.owner.toString() === req.user._id.toString();
+    const isManager = team.members.some(m => m.user.toString() === req.user._id.toString() && ['owner', 'leader', 'manager'].includes(m.role));
+    const isAdmin = req.user.role === 'superadmin';
+
+    if (!isOwner && !isManager && !isAdmin) {
+      return res.status(403).json({ message: '只有队长、管理员或超级管理员可以更新赞助商信息' });
+    }
+
+    const sponsor = team.sponsors?.find(s => s._id.toString() === req.params.sponsorId);
+    if (!sponsor) {
+      return res.status(404).json({ message: '赞助商不存在' });
+    }
+
+    // 计算赞助金额变化
+    const oldAmount = sponsor.sponsorshipAmount || 0;
+    const newAmount = sponsorshipAmount !== undefined ? sponsorshipAmount : oldAmount;
+    const amountDifference = newAmount - oldAmount;
+
+    // 更新字段
+    if (name !== undefined) sponsor.name = name;
+    if (logo !== undefined) sponsor.logo = logo;
+    if (contactPerson !== undefined) sponsor.contactPerson = contactPerson;
+    if (contactPhone !== undefined) sponsor.contactPhone = contactPhone;
+    if (contactEmail !== undefined) sponsor.contactEmail = contactEmail;
+    if (sponsorshipAmount !== undefined) sponsor.sponsorshipAmount = sponsorshipAmount;
+    if (sponsorshipType !== undefined) sponsor.sponsorshipType = sponsorshipType;
+    if (contractStart !== undefined) sponsor.contractStart = contractStart;
+    if (contractEnd !== undefined) sponsor.contractEnd = contractEnd;
+    if (status !== undefined) sponsor.status = status;
+    if (benefits !== undefined) sponsor.benefits = benefits;
+    if (notes !== undefined) sponsor.notes = notes;
+
+    // 更新签约统计
+    if (amountDifference !== 0) {
+      team.signingStats.totalSponsorshipRevenue = (team.signingStats.totalSponsorshipRevenue || 0) + amountDifference;
+    }
+    team.signingStats.activeSponsorCount = team.sponsors.filter(s => s.status === 'active').length;
+
+    // 添加签约记录
+    team.signingRecords.push({
+      type: 'sponsor',
+      targetId: sponsor._id,
+      targetName: sponsor.name,
+      action: status === 'terminated' ? 'terminate' : (status === 'expired' ? 'expire' : 'renew'),
+      amount: amountDifference,
+      date: new Date(),
+      operator: req.user._id,
+      notes: notes || ''
+    });
+
+    await team.save();
+
+    res.json({
+      success: true,
+      message: '赞助商信息已更新',
+      data: sponsor
+    });
+  } catch (error) {
+    console.error('更新赞助商错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   DELETE /api/teams/:id/signing/sponsors/:sponsorId
+// @desc    解除赞助商
+// @access  Private (owner/manager)
+router.delete('/:id/signing/sponsors/:sponsorId', protect, abac({ resource: 'team', actions: ['write'] }), async (req, res) => {
+  try {
+    const { reason } = req.body;
+
+    const team = await Team.findById(req.params.id);
+    if (!team) {
+      return res.status(404).json({ message: '战队不存在' });
+    }
+
+    // 检查是否是队长或管理员
+    const isOwner = team.owner.toString() === req.user._id.toString();
+    const isManager = team.members.some(m => m.user.toString() === req.user._id.toString() && ['owner', 'leader', 'manager'].includes(m.role));
+    const isAdmin = req.user.role === 'superadmin';
+
+    if (!isOwner && !isManager && !isAdmin) {
+      return res.status(403).json({ message: '只有队长、管理员或超级管理员可以解除赞助' });
+    }
+
+    const sponsorIndex = team.sponsors?.findIndex(s => s._id.toString() === req.params.sponsorId);
+    if (sponsorIndex === -1 || sponsorIndex === undefined) {
+      return res.status(404).json({ message: '赞助商不存在' });
+    }
+
+    const removedSponsor = team.sponsors[sponsorIndex];
+
+    // 添加签约记录
+    team.signingRecords.push({
+      type: 'sponsor',
+      targetId: removedSponsor._id,
+      targetName: removedSponsor.name,
+      action: 'terminate',
+      amount: 0,
+      date: new Date(),
+      operator: req.user._id,
+      notes: reason || '解除赞助'
+    });
+
+    // 更新签约统计
+    team.signingStats.activeSponsorCount = team.sponsors.filter(s => s.status === 'active' && s._id.toString() !== req.params.sponsorId).length;
+
+    // 移除赞助商
+    team.sponsors.splice(sponsorIndex, 1);
+
+    await team.save();
+
+    res.json({
+      success: true,
+      message: '已解除赞助'
+    });
+  } catch (error) {
+    console.error('解除赞助商错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   GET /api/teams/:id/signing/records
+// @desc    获取签约记录
+// @access  Private (owner/manager)
+router.get('/:id/signing/records', protect, async (req, res) => {
+  try {
+    const team = await Team.findById(req.params.id);
+    if (!team) {
+      return res.status(404).json({ message: '战队不存在' });
+    }
+
+    // 检查是否是队长或管理员
+    const isOwner = team.owner.toString() === req.user._id.toString();
+    const isManager = team.members.some(m => m.user.toString() === req.user._id.toString() && ['owner', 'leader', 'manager'].includes(m.role));
+
+    if (!isOwner && !isManager && req.user.role !== 'superadmin') {
+      return res.status(403).json({ message: '只有队长、管理员或超级管理员可以查看签约记录' });
+    }
+
+    // 填充操作者信息
+    const enrichedRecords = await Promise.all(
+      (team.signingRecords || []).map(async (record) => {
+        try {
+          const operatorUser = await User.findById(record.operator).select('username');
+          return {
+            ...record.toObject(),
+            operatorInfo: operatorUser ? { _id: operatorUser._id, username: operatorUser.username } : null
+          };
+        } catch (err) {
+          return record;
+        }
+      })
+    );
+
+    // 按时间倒序排列
+    const sortedRecords = enrichedRecords.sort((a, b) =>
+      new Date(b.date).getTime() - new Date(a.date).getTime()
+    );
+
+    res.json({
+      success: true,
+      data: sortedRecords
+    });
+  } catch (error) {
+    console.error('获取签约记录错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   GET /api/teams/:id/signing/stats
+// @desc    获取签约统计
+// @access  Private (owner/manager)
+router.get('/:id/signing/stats', protect, async (req, res) => {
+  try {
+    const team = await Team.findById(req.params.id);
+    if (!team) {
+      return res.status(404).json({ message: '战队不存在' });
+    }
+
+    // 检查是否是队长或管理员
+    const isOwner = team.owner.toString() === req.user._id.toString();
+    const isManager = team.members.some(m => m.user.toString() === req.user._id.toString() && ['owner', 'leader', 'manager'].includes(m.role));
+
+    if (!isOwner && !isManager && req.user.role !== 'superadmin') {
+      return res.status(403).json({ message: '只有队长、管理员或超级管理员可以查看签约统计' });
+    }
+
+    res.json({
+      success: true,
+      data: team.signingStats || {
+        totalSigningFees: 0,
+        totalSponsorshipRevenue: 0,
+        activePlayerCount: 0,
+        activeSponsorCount: 0
+      }
+    });
+  } catch (error) {
+    console.error('获取签约统计错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// ==================== 合约下载 API ====================
+
+// @route   GET /api/teams/:id/contracts
+// @desc    获取战队的签约合约列表
+// @access  Private (owner/manager)
+router.get('/:id/contracts', protect, async (req, res) => {
+  try {
+    const team = await Team.findById(req.params.id);
+    if (!team) {
+      return res.status(404).json({ message: '战队不存在' });
+    }
+
+    // 检查是否是队长或管理员
+    const isOwner = team.owner.toString() === req.user._id.toString();
+    const isManager = team.members.some(m => m.user.toString() === req.user._id.toString() && ['owner', 'leader', 'manager'].includes(m.role));
+    const isAdmin = req.user.role === 'superadmin';
+
+    if (!isOwner && !isManager && !isAdmin) {
+      return res.status(403).json({ message: '只有队长、管理员或超级管理员可以查看合约列表' });
+    }
+
+    // 查找所有签约了该战队的店铺
+    const shops = await Shop.find({
+      'signedTeams.team': team._id
+    }).populate('owner', 'username');
+
+    const contracts = [];
+    for (const shop of shops) {
+      const signedTeam = shop.signedTeams.find(st => st.team.toString() === team._id.toString());
+      if (signedTeam && signedTeam.contractDocument) {
+        contracts.push({
+          shopId: shop._id,
+          shopName: shop.name,
+          shopOwner: shop.owner,
+          contractDocument: signedTeam.contractDocument,
+          contractStart: signedTeam.contractStart,
+          contractEnd: signedTeam.contractEnd,
+          status: signedTeam.status,
+          signedDate: signedTeam.signedDate
+        });
+      }
+    }
+
+    res.json({
+      success: true,
+      data: contracts
+    });
+  } catch (error) {
+    console.error('获取合约列表错误:', error);
+    res.status(500).json({ message: '服务器错误' });
+  }
+});
+
+// @route   GET /api/teams/:id/contracts/:shopId/download
+// @desc    下载战队与店铺的签约合约
+// @access  Private (owner/manager)
+router.get('/:id/contracts/:shopId/download', protect, async (req, res) => {
+  try {
+    const team = await Team.findById(req.params.id);
+    if (!team) {
+      return res.status(404).json({ message: '战队不存在' });
+    }
+
+    // 检查是否是队长或管理员
+    const isOwner = team.owner.toString() === req.user._id.toString();
+    const isManager = team.members.some(m => m.user.toString() === req.user._id.toString() && ['owner', 'leader', 'manager'].includes(m.role));
+    const isAdmin = req.user.role === 'superadmin';
+
+    if (!isOwner && !isManager && !isAdmin) {
+      return res.status(403).json({ message: '只有队长、管理员或超级管理员可以下载合约' });
+    }
+
+    // 查找店铺和合约
+    const shop = await Shop.findById(req.params.shopId);
+    if (!shop) {
+      return res.status(404).json({ message: '店铺不存在' });
+    }
+
+    const signedTeam = shop.signedTeams?.find(st => st.team.toString() === team._id.toString());
+    if (!signedTeam) {
+      return res.status(404).json({ message: '该店铺未签约此战队' });
+    }
+
+    if (!signedTeam.contractDocument) {
+      return res.status(404).json({ message: '合约文件不存在' });
+    }
+
+    // 构建文件路径
+    const filePath = path.join(__dirname, '../public', signedTeam.contractDocument);
+    
+    // 检查文件是否存在
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ message: '合约文件不存在' });
+    }
+
+    // 获取文件扩展名
+    const ext = path.extname(filePath);
+    let contentType = 'application/octet-stream';
+    if (ext === '.pdf') contentType = 'application/pdf';
+    else if (ext === '.doc') contentType = 'application/msword';
+    else if (ext === '.docx') contentType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    else if (ext === '.txt') contentType = 'text/plain';
+
+    // 设置响应头
+    res.setHeader('Content-Disposition', `attachment; filename="contract${ext}"`);
+    res.setHeader('Content-Type', contentType);
+    
+    // 发送文件
+    res.sendFile(filePath);
+  } catch (error) {
+    console.error('下载合约错误:', error);
     res.status(500).json({ message: '服务器错误' });
   }
 });

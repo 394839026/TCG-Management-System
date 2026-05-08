@@ -4,7 +4,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { User, Search, Send, Check, X, Trash2, MessageCircle, Users, Clock } from 'lucide-react';
+import { User, Search, Send, Check, X, Trash2, MessageCircle, Users, Clock, Eye } from 'lucide-react';
 import { friendService } from '@/services/api';
 import { toast } from 'sonner';
 import { useNavigate } from 'react-router-dom';
@@ -91,6 +91,9 @@ export function FriendsPage() {
               </div>
             </div>
             <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => navigate(`/user-inventory/${friendUser._id}`)}>
+                <Eye className="w-4 h-4" />
+              </Button>
               <Button variant="outline" size="sm" onClick={() => navigate(`/messages?friendId=${friendUser._id}`)}>
                 <MessageCircle className="w-4 h-4" />
               </Button>
@@ -175,16 +178,27 @@ export function FriendsPage() {
                 )}
               </div>
             </div>
-            {!user.isFriend && !user.hasRequest && (
-              <Button 
-                size="sm" 
-                onClick={() => sendRequestMutation.mutate(user._id)}
-                disabled={sendRequestMutation.isPending}
-              >
-                <Send className="w-4 h-4 mr-1" />
-                添加好友
-              </Button>
-            )}
+            <div className="flex items-center gap-2">
+              {user.isFriend && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => navigate(`/user-inventory/${user._id}`)}
+                >
+                  <Eye className="w-4 h-4" />
+                </Button>
+              )}
+              {!user.isFriend && !user.hasRequest && (
+                <Button 
+                  size="sm" 
+                  onClick={() => sendRequestMutation.mutate(user._id)}
+                  disabled={sendRequestMutation.isPending}
+                >
+                  <Send className="w-4 h-4 mr-1" />
+                  添加好友
+                </Button>
+              )}
+            </div>
           </div>
         </CardContent>
       </Card>

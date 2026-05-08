@@ -1,5 +1,65 @@
 import apiClient from '../lib/api'
 
+export const api = apiClient
+
+// ==================== 音乐播放器 ====================
+export interface Music {
+  _id: string
+  title: string
+  artist: string
+  filePath: string
+  fileSize: number
+  duration?: number
+  uploadedBy: any
+  isActive: boolean
+  playCount: number
+  sortOrder: number
+  createdAt: string
+  updatedAt: string
+}
+
+export const musicService = {
+  // 获取音乐列表（所有用户）
+  getMusicList: async () => {
+    const response = await apiClient.get('/music/list')
+    return response.data
+  },
+
+  // 获取所有音乐（管理员）
+  getAllMusicAdmin: async () => {
+    const response = await apiClient.get('/music/admin/list')
+    return response.data
+  },
+
+  // 上传音乐（管理员）
+  uploadMusic: async (formData: FormData) => {
+    const response = await apiClient.post('/music/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return response.data
+  },
+
+  // 删除音乐（管理员）
+  deleteMusic: async (id: string) => {
+    const response = await apiClient.delete(`/music/${id}`)
+    return response.data
+  },
+
+  // 切换音乐启用状态（管理员）
+  toggleMusicActive: async (id: string) => {
+    const response = await apiClient.put(`/music/${id}/toggle`)
+    return response.data
+  },
+
+  // 增加播放次数
+  incrementPlayCount: async (id: string) => {
+    const response = await apiClient.post(`/music/${id}/play`)
+    return response.data
+  },
+}
+
 export interface DonationRecord {
   _id?: string
   type: 'points' | 'item'
@@ -43,6 +103,12 @@ export interface Team {
 export const teamService = {
   getAll: async (params?: { page?: number; limit?: number; search?: string }) => {
     const response = await apiClient.get('/teams', { params })
+    return response.data
+  },
+
+  // 获取用户所属的战队
+  getMyTeams: async () => {
+    const response = await apiClient.get('/teams/my')
     return response.data
   },
 
@@ -149,6 +215,79 @@ export const teamService = {
   createGroupChat: async (teamId: string) => {
     const response = await apiClient.post(`/teams/${teamId}/create-group-chat`)
     return response.data
+  },
+  
+  // ==================== 战队签约管理 ====================
+  // 获取签约选手
+  getSignedPlayers: async (teamId: string) => {
+    const response = await apiClient.get(`/teams/${teamId}/signing/players`)
+    return response.data
+  },
+  
+  // 签约选手
+  signPlayer: async (teamId: string, data: {
+    playerId: string
+    position?: string
+    contractStart?: string
+    contractEnd?: string
+    salary?: number
+    notes?: string
+  }) => {
+    const response = await apiClient.post(`/teams/${teamId}/signing/player`, data)
+    return response.data
+  },
+  
+  // 解约选手
+  releasePlayer: async (teamId: string, playerId: string) => {
+    const response = await apiClient.delete(`/teams/${teamId}/signing/players/${playerId}`)
+    return response.data
+  },
+  
+  // 获取赞助商
+  getSponsors: async (teamId: string) => {
+    const response = await apiClient.get(`/teams/${teamId}/signing/sponsors`)
+    return response.data
+  },
+  
+  // 添加赞助商
+  addSponsor: async (teamId: string, data: {
+    name: string
+    description?: string
+    sponsorshipAmount?: number
+    contractStart?: string
+    contractEnd?: string
+    website?: string
+    contactInfo?: string
+    notes?: string
+  }) => {
+    const response = await apiClient.post(`/teams/${teamId}/signing/sponsor`, data)
+    return response.data
+  },
+  
+  // 移除赞助商
+  removeSponsor: async (teamId: string, sponsorId: string) => {
+    const response = await apiClient.delete(`/teams/${teamId}/signing/sponsors/${sponsorId}`)
+    return response.data
+  },
+  
+  // 获取签约店铺
+  getSignedShops: async (teamId: string) => {
+    const response = await apiClient.get(`/teams/${teamId}/signing/shops`)
+    return response.data
+  },
+
+  // 获取战队合约列表
+  getTeamContracts: async (teamId: string) => {
+    const response = await apiClient.get(`/teams/${teamId}/contracts`)
+    return response.data
+  },
+
+  // 下载战队合约
+  downloadTeamContract: async (teamId: string, shopId: string) => {
+    const response = await apiClient.get(`/teams/${teamId}/contracts/${shopId}/download`, {
+      responseType: 'blob',
+    })
+    return response
   },
 }
 
@@ -262,6 +401,109 @@ export const teamInventoryService = {
   },
   returnItem: async (teamId: string, recordId: string) => {
     const response = await apiClient.post(`/team-inventory/${teamId}/borrow-records/${recordId}/return`)
+    return response.data
+  },
+}
+
+// ==================== 战队构筑共享 ====================
+export interface TeamDeckBorrowRequest {
+  _id: string
+  deck: Deck | string
+  deckName: string
+  requestedBy: any
+  requestDate: string
+  status: 'pending' | 'approved' | 'rejected'
+  handledBy?: any
+  handledDate?: string
+  returnDate?: string
+  note?: string
+}
+
+export interface TeamDeckBorrowRecord {
+  _id: string
+  deck: Deck | string
+  deckName: string
+  borrowedBy: any
+  borrowedAt: string
+  returnedAt?: string
+  returnDate?: string
+  status: 'borrowed' | 'returned'
+  note?: string
+}
+
+export interface TeamSharedDeck extends Deck {
+  sharedAt?: string
+  isAvailable?: boolean
+  borrowedBy?: any
+  borrowedAt?: string
+  returnDate?: string
+  addedBy?: any
+}
+
+export interface TeamDeckStats {
+  totalDecks: number
+  availableDecks: number
+  borrowedDecks: number
+}
+
+export const teamDeckService = {
+  // 获取战队共享构筑列表
+  getTeamDecks: async (teamId: string) => {
+    const response = await apiClient.get(`/team-decks/${teamId}/decks`)
+    return response.data
+  },
+
+  // 添加构筑到战队共享
+  addDeckToTeam: async (teamId: string, deckId: string) => {
+    const response = await apiClient.post(`/team-decks/${teamId}/decks`, { deckId })
+    return response.data
+  },
+
+  // 从战队共享移除构筑
+  removeDeckFromTeam: async (teamId: string, deckId: string) => {
+    const response = await apiClient.delete(`/team-decks/${teamId}/decks/${deckId}`)
+    return response.data
+  },
+
+  // 创建构筑借用申请
+  createDeckBorrowRequest: async (teamId: string, data: {
+    deckId: string
+    note?: string
+    returnDate?: string
+  }) => {
+    const response = await apiClient.post(`/team-decks/${teamId}/deck-borrow-requests`, data)
+    return response.data
+  },
+
+  // 获取构筑借用申请列表
+  getDeckBorrowRequests: async (teamId: string, status?: string) => {
+    const params = status ? { status } : undefined
+    const response = await apiClient.get(`/team-decks/${teamId}/deck-borrow-requests`, { params })
+    return response.data
+  },
+
+  // 处理构筑借用申请
+  handleDeckBorrowRequest: async (teamId: string, requestId: string, action: 'approve' | 'reject') => {
+    const response = await apiClient.post(`/team-decks/${teamId}/deck-borrow-requests/${requestId}/handle`, { action })
+    return response.data
+  },
+
+  // 获取构筑借用记录
+  getDeckBorrowRecords: async (teamId: string, status?: string) => {
+    const params = status ? { status } : undefined
+    const response = await apiClient.get(`/team-decks/${teamId}/deck-borrow-records`, { params })
+    return response.data
+  },
+
+  // 归还构筑
+  returnDeck: async (teamId: string, recordId: string) => {
+    const response = await apiClient.post(`/team-decks/${teamId}/deck-borrow-records/${recordId}/return`)
+    return response.data
+  },
+
+  // 获取我的构筑借用记录
+  getMyDeckBorrows: async (teamId: string) => {
+    const response = await apiClient.get(`/team-decks/${teamId}/decks/my-borrows`)
     return response.data
   },
 }
@@ -418,6 +660,55 @@ export const shopService = {
 
   removeItemFromShelf: async (shopId: string, shelfId: string, itemId: string) => {
     const response = await apiClient.delete(`/shops/${shopId}/shelves/${shelfId}/items/${itemId}`)
+    return response.data
+  },
+  
+  // ==================== 店铺签约管理 ====================
+  // 签约战队
+  signTeam: async (shopId: string, data: {
+    teamId: string
+    sponsorshipAmount?: number
+    sponsorshipType?: string
+    contractStart?: string
+    contractEnd?: string
+    benefits?: string
+    notes?: string
+  }) => {
+    const response = await apiClient.post(`/shops/${shopId}/signing/team`, data)
+    return response.data
+  },
+  
+  // 获取签约战队列表
+  getSignedTeams: async (shopId: string) => {
+    const response = await apiClient.get(`/shops/${shopId}/signing/teams`)
+    return response.data
+  },
+  
+  // 更新签约战队
+  updateSignedTeam: async (shopId: string, teamId: string, data: any) => {
+    const response = await apiClient.put(`/shops/${shopId}/signing/teams/${teamId}`, data)
+    return response.data
+  },
+  
+  // 解除签约战队
+  terminateSignedTeam: async (shopId: string, teamId: string, reason?: string) => {
+    const response = await apiClient.delete(`/shops/${shopId}/signing/teams/${teamId}`, { data: { reason } })
+    return response.data
+  },
+
+  // 上传战队合约
+  uploadTeamContract: async (shopId: string, teamId: string, formData: FormData) => {
+    const response = await apiClient.post(`/shops/${shopId}/signing/teams/${teamId}/contract`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return response.data
+  },
+
+  // 删除战队合约
+  deleteTeamContract: async (shopId: string, teamId: string) => {
+    const response = await apiClient.delete(`/shops/${shopId}/signing/teams/${teamId}/contract`)
     return response.data
   },
 }
@@ -1228,7 +1519,7 @@ export interface PlatformStoreItem {
   _id: string
   itemName: string
   description?: string
-  itemType: 'inventory_item' | 'points' | 'exp' | 'badge' | 'title' | 'other'
+  itemType: 'inventory_item' | 'points' | 'exp' | 'badge' | 'title' | 'physical_item' | 'digital_item' | 'coupon' | 'membership' | 'other'
   currencyType: 'points' | 'coins'
   price: number
   inventoryItem?: any
@@ -1280,9 +1571,21 @@ export const platformStoreService = {
     return response.data
   },
 
+  // 战队兑换商店物品
+  teamRedeemStoreItem: async (teamId: string, id: string, quantity: number = 1) => {
+    const response = await apiClient.post(`/platform-store/${id}/team-redeem`, { teamId, quantity })
+    return response.data
+  },
+
   // 获取用户的兑换记录
   getMyRedemptions: async () => {
     const response = await apiClient.get('/platform-store/redemptions/my')
+    return response.data
+  },
+
+  // 获取战队的兑换记录
+  getTeamRedemptions: async (teamId: string) => {
+    const response = await apiClient.get(`/platform-store/redemptions/team/${teamId}`)
     return response.data
   },
 
@@ -1604,6 +1907,83 @@ export const gachaUserService = {
   // 获取用户抽卡统计
   getStats: async () => {
     const response = await apiClient.get('/gacha-user/stats')
+    return response.data
+  },
+}
+
+// ==================== 库存查看申请 ====================
+export interface InventoryViewRequest {
+  _id: string
+  requester: { _id: string; username: string; avatar?: string }
+  owner: { _id: string; username: string; avatar?: string }
+  status: 'pending' | 'accepted' | 'rejected' | 'expired'
+  message?: string
+  expiresAt: string
+  createdAt: string
+  updatedAt: string
+}
+
+export const inventoryViewRequestService = {
+  // 获取我收到的申请
+  getMyReceivedRequests: async () => {
+    const response = await apiClient.get('/inventory-view-requests/me/received')
+    return response.data
+  },
+
+  // 获取我发送的申请
+  getMySentRequests: async () => {
+    const response = await apiClient.get('/inventory-view-requests/me/sent')
+    return response.data
+  },
+
+  // 发送申请
+  sendRequest: async (userId: string, message?: string) => {
+    const response = await apiClient.post('/inventory-view-requests', { userId, message })
+    return response.data
+  },
+
+  // 接受申请
+  acceptRequest: async (requestId: string) => {
+    const response = await apiClient.put(`/inventory-view-requests/${requestId}/accept`)
+    return response.data
+  },
+
+  // 拒绝申请
+  rejectRequest: async (requestId: string) => {
+    const response = await apiClient.put(`/inventory-view-requests/${requestId}/reject`)
+    return response.data
+  },
+
+  // 删除申请
+  deleteRequest: async (requestId: string) => {
+    const response = await apiClient.delete(`/inventory-view-requests/${requestId}`)
+    return response.data
+  },
+
+  // 检查是否可以查看某用户库存
+  checkCanView: async (userId: string) => {
+    const response = await apiClient.get(`/inventory-view-requests/me/can-view/${userId}`)
+    return response.data
+  },
+
+  // 获取查看权限详情
+  getPermission: async (userId: string) => {
+    const response = await apiClient.get(`/inventory-view-requests/me/permission/${userId}`)
+    return response.data
+  },
+
+  // 获取未处理申请数量
+  getPendingCount: async () => {
+    const response = await apiClient.get('/inventory-view-requests/me/received/count')
+    return response.data
+  },
+}
+
+// ==================== 查看他人库存 ====================
+export const userInventoryService = {
+  // 查看他人库存
+  getUserInventory: async (userId: string, params?: any) => {
+    const response = await apiClient.get(`/user-inventory/user/${userId}`, { params })
     return response.data
   },
 }

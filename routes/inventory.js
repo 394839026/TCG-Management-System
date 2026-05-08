@@ -947,6 +947,46 @@ router.post('/:id/image',
   }
 );
 
+router.post('/:id/image-url',
+  protect,
+  authorize('admin', 'superadmin'),
+  [
+    body('url').trim().isURL().withMessage('请输入有效的URL地址')
+  ],
+  async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const item = await InventoryItem.findById(req.params.id);
+
+      if (!item) {
+        return res.status(404).json({ message: '物品不存在' });
+      }
+
+      const { url } = req.body;
+
+      if (!item.images) {
+        item.images = [];
+      }
+      item.images = [url];
+
+      await item.save();
+
+      res.json({
+        success: true,
+        message: '图片添加成功',
+        data: item
+      });
+    } catch (error) {
+      console.error(error);
+      res.status(500).json({ message: '服务器错误' });
+    }
+  }
+);
+
 router.delete('/:id/image',
   protect,
   authorize('admin', 'superadmin'),
